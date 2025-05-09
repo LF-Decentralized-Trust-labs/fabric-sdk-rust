@@ -1,0 +1,3 @@
+[submodule "fabric-protos"]
+	path = fabric-protos
+	url = https://github.com/hyperledger/fabric-protos
