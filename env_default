@@ -1,0 +1,11 @@
+ORDERER_TLS_CERT_PATH=~/fabric/fabric-samples/test-network/organizations/ordererOrganizations/example.com/tlsca/tlsca.example.com-cert.pem
+PEER1_TLS_CERT_PATH=~/fabric/fabric-samples/test-network/organizations/peerOrganizations/org1.example.com/tlsca/tlsca.org1.example.com-cert.pem
+PEER1_USER1_CERT_PATH=~/fabric/fabric-samples/test-network/organizations/peerOrganizations/org1.example.com/users/User1@org1.example.com/msp/signcerts/User1@org1.example.com-cert.pem
+PEER1_KEY_PATH=~/fabric/fabric-samples/test-network/organizations/peerOrganizations/org1.example.com/users/User1@org1.example.com/msp/keystore/priv_sk
+PEER2_TLS_CERT_PATH=~/fabric/fabric-samples/test-network/organizations/peerOrganizations/org2.example.com/tlsca/tlsca.org2.example.com-cert.pem
+MSP_ID=Org1MSP
+CHANNEL_NAME="mychannel"
+CHAINCODE_NAME="basic"
+CONTRACT_NAME=""
+FUNCTION_NAME="InitLedger"
+CHAINCODE_VERSION="1.0"

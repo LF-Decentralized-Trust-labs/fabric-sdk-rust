@@ -17,7 +17,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut config = tonic_build::Config::new();
     config.out_dir("src/protos");
-
     tonic_build::configure()
         .build_client(true)
         .compile_protos_with_config(config, &proto_files, &[proto_dir])?;
