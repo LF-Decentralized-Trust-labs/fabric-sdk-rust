@@ -1,9 +1,13 @@
-mod connection;
+pub mod client;
+pub mod error;
+pub mod identity;
+pub mod signer;
+#[allow(dead_code)]
 mod protos;
-
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+mod transaction;
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    mod handshake;
+    mod transaction;
+}

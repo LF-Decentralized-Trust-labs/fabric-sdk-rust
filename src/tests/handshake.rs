@@ -1,23 +1,12 @@
 use std::{env, fs};
 use tonic::transport::{Certificate, Channel, ClientTlsConfig};
 
-#[derive(Debug)]
-struct Connection {
-    // Fields and methods for the Connection struct
-    channel: Channel,
-}
-
-impl Connection {
-    // Methods for the Connection struct
-}
-
-async fn handshake_orderer() -> Connection {
+pub(crate) async fn handshake_orderer() -> Channel {
     let tls_path =
         env::var("ORDERER_TLS_CERT_PATH").expect("TLS_CERT_PATH environment variable not set");
     println!("Path: {}", tls_path);
 
     let cert = Certificate::from_pem(fs::read(tls_path).expect("Couldn't read file"));
-    println!("Binary tls: {:?}", cert);
 
     let tls_config = ClientTlsConfig::new().ca_certificate(cert.clone());
 
@@ -27,10 +16,10 @@ async fn handshake_orderer() -> Connection {
         .connect()
         .await
         .unwrap();
-    Connection { channel }
+    channel
 }
 
-async fn handshake_peer1() -> Connection {
+pub(crate) async fn handshake_peer1() -> Channel {
     let tls_path =
         env::var("PEER1_TLS_CERT_PATH").expect("TLS_CERT_PATH environment variable not set");
 
@@ -44,10 +33,10 @@ async fn handshake_peer1() -> Connection {
         .connect()
         .await
         .unwrap();
-    Connection { channel }
+    channel
 }
 
-async fn handshake_peer2() -> Connection {
+pub(crate) async fn handshake_peer2() -> Channel {
     let tls_path =
         env::var("PEER2_TLS_CERT_PATH").expect("TLS_CERT_PATH environment variable not set");
 
@@ -61,24 +50,12 @@ async fn handshake_peer2() -> Connection {
         .connect()
         .await
         .unwrap();
-    Connection { channel }
+    channel
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lazy_static::lazy_static;
-    use std::sync::Once;
-
-    lazy_static! {
-        static ref INITIALIZER: Once = Once::new();
-    }
-
-    fn initialize() {
-        rustls::crypto::ring::default_provider()
-            .install_default()
-            .expect("Failed to install rustls crypto provider");
-    }
 
     #[test]
     fn test_handshake_orderer() {
@@ -88,7 +65,6 @@ mod tests {
             .build()
             .unwrap()
             .block_on(async {
-                INITIALIZER.call_once(initialize);
                 let connection = handshake_orderer().await;
                 println!("{:?}", connection);
             });
@@ -102,7 +78,6 @@ mod tests {
             .build()
             .unwrap()
             .block_on(async {
-                INITIALIZER.call_once(initialize);
                 let connection = handshake_peer1().await;
                 println!("{:?}", connection);
             });
@@ -116,7 +91,6 @@ mod tests {
             .build()
             .unwrap()
             .block_on(async {
-                INITIALIZER.call_once(initialize);
                 let connection = handshake_peer2().await;
                 println!("{:?}", connection);
             });

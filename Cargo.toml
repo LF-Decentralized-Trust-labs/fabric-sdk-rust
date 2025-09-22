@@ -5,16 +5,19 @@ edition = "2024"
 build = "build.rs"
 
 [dependencies]
-tonic = { version = "0.13.0", features = ["_tls-any", "tls-native-roots", "tls-webpki-roots"] }
-prost = "0.13.5"
-prost-types = "0.13.5"
+tonic = { version = "0.13.1", features = ["tls-ring"] }
+prost = "0.13.1"
+prost-types = "0.13.1"
 rustls = { version = "0.23.23", features = ["ring"] }
-
+openssl = "0.10.73"
+hex = "0.4.3"
+ecdsa = {version="0.16.9", features=["der","arithmetic"]}
 lazy_static = "1.4.0"
+p256 = "0.13.2"
 
 [dev-dependencies]
 dotenv = "0.15.0"
 tokio = { version = "1.28.0", features = ["full"] }
 
 [build-dependencies]
-tonic-build = { version = "0.13.0", default-features = false, features = ["prost"] }
+tonic-build = { version = "0.13.1", default-features = false, features=["prost"] }
