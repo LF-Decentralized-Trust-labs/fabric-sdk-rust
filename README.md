@@ -10,7 +10,7 @@ This can be changed via env variables
 
 Clone the project
 ```bash
-git clone https://github.com/LF-Decentralized-Trust-labs/fabric-sdk-rust && cd fabric-sdk-rus
+git clone https://github.com/LF-Decentralized-Trust-labs/fabric-sdk-rust && cd fabric-sdk-rust
 ```
 
 Copy the env_default to .env

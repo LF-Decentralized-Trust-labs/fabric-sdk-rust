@@ -1,7 +1,7 @@
 use std::{env, fs};
 use tonic::transport::{Certificate, Channel, ClientTlsConfig};
 
-async fn handshake_orderer() -> Channel {
+pub(crate) async fn handshake_orderer() -> Channel {
     let tls_path =
         env::var("ORDERER_TLS_CERT_PATH").expect("TLS_CERT_PATH environment variable not set");
     println!("Path: {}", tls_path);
@@ -19,7 +19,7 @@ async fn handshake_orderer() -> Channel {
     channel
 }
 
-async fn handshake_peer1() -> Channel {
+pub(crate) async fn handshake_peer1() -> Channel {
     let tls_path =
         env::var("PEER1_TLS_CERT_PATH").expect("TLS_CERT_PATH environment variable not set");
 
@@ -36,7 +36,7 @@ async fn handshake_peer1() -> Channel {
     channel
 }
 
-async fn handshake_peer2() -> Channel {
+pub(crate) async fn handshake_peer2() -> Channel {
     let tls_path =
         env::var("PEER2_TLS_CERT_PATH").expect("TLS_CERT_PATH environment variable not set");
 
@@ -56,18 +56,6 @@ async fn handshake_peer2() -> Channel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lazy_static::lazy_static;
-    use std::sync::Once;
-
-    lazy_static! {
-        static ref INITIALIZER: Once = Once::new();
-    }
-
-    fn initialize() {
-        rustls::crypto::ring::default_provider()
-            .install_default()
-            .expect("Failed to install rustls crypto provider");
-    }
 
     #[test]
     fn test_handshake_orderer() {
@@ -77,7 +65,6 @@ mod tests {
             .build()
             .unwrap()
             .block_on(async {
-                INITIALIZER.call_once(initialize);
                 let connection = handshake_orderer().await;
                 println!("{:?}", connection);
             });
@@ -91,7 +78,6 @@ mod tests {
             .build()
             .unwrap()
             .block_on(async {
-                INITIALIZER.call_once(initialize);
                 let connection = handshake_peer1().await;
                 println!("{:?}", connection);
             });
@@ -105,7 +91,6 @@ mod tests {
             .build()
             .unwrap()
             .block_on(async {
-                INITIALIZER.call_once(initialize);
                 let connection = handshake_peer2().await;
                 println!("{:?}", connection);
             });
