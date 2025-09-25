@@ -27,12 +27,54 @@ And now you are ready to go!
 
 # Using the crate
 
+Keep in mind, that this is still under heavy development and cannot seen as "safe"!
+
 The crate can be used via local link:
 ```toml
 fabric-sdk-rust = {path="../fabric-sdk-rust"}
 ```
+Here is an simple code example how to use the library:
+```rust
+use std::error::Error;
 
-Keep in mind, that this is still under heavy development and cannot seen as "safe"!
+use fabric_sdk_rust::{client::ClientBuilder, identity::IdentityBuilder};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    let identity = IdentityBuilder::from_pem(std::fs::read_to_string(
+        "/home/user/fabric/fabric-samples/test-network/organizations/peerOrganizations/org1.example.com/users/User1@org1.example.com/msp/signcerts/User1@org1.example.com-cert.pem"
+    )?.as_bytes())
+        .with_msp("Org1MSP")?
+        .build()?;
+
+    let mut client = ClientBuilder::new()
+        .with_identity(identity)?
+        .with_tls(std::fs::read("/home/user/fabric/fabric-samples/test-network/organizations/peerOrganizations/org1.example.com/tlsca/tlsca.org1.example.com-cert.pem")?)?
+        .with_signer(fabric_sdk_rust::signer::Signer{
+            pkey: std::fs::read(
+                "/home/user/fabric/fabric-samples/test-network/organizations/peerOrganizations/org1.example.com/users/User1@org1.example.com/msp/keystore/priv_sk")?
+        })?
+        .build()?;
+    client.connect().await?;
+
+    let tx_builder = client.get_transaction_builder()
+        .with_channel_name("mychannel")?
+        .with_chaincode_id("basic")?
+        .with_function_name("InitLedger")?
+        .build();
+    match tx_builder {
+        Ok(prepared_transaction) => {
+           match prepared_transaction.submit().await{
+            Ok(result) => println!("{:?}",result),
+            Err(err) => println!("{}",err),
+        }
+        },
+        Err(err) => println!("{}",err),
+    }
+
+    Ok(())
+}
+```
 
 # TODO's
 
