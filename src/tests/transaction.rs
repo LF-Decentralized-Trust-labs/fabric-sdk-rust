@@ -4,14 +4,11 @@ mod transaction_test {
     use crate::protos::gateway::gateway_client::GatewayClient;
     use crate::protos::gateway::{EndorseRequest, ProposedTransaction, SubmitRequest};
     use crate::protos::protos::*;
-    use crate::transaction::{self};
-    use lazy_static::lazy_static;
     use openssl::ec::EcKey;
     use openssl::hash::{Hasher, MessageDigest};
     use openssl::sha::Sha256;
     use p256::pkcs8::der::Encode;
     use prost::Message;
-    use std::sync::Once;
     use std::{env, fs, vec};
     use tonic::transport::Certificate;
 
@@ -75,17 +72,18 @@ mod transaction_test {
                 //    format!("{}:{}", contract_name, function_name)
                 //};
 
-                //Read identity
-                let identity_pm_path = env::var("PEER1_USER1_CERT_PATH")
-                    .expect("PEER1_USER1_CERT_PATH environment variable not set");
+                let identity = {
+                    //Read identity
+                    let identity_pm_path = env::var("PEER1_USER1_CERT_PATH")
+                        .expect("PEER1_USER1_CERT_PATH environment variable not set");
 
-                let public_cert =
-                    Certificate::from_pem(fs::read(identity_pm_path).expect("Couldn't read file"));
+                    let public_cert =
+                        Certificate::from_pem(fs::read(identity_pm_path).expect("Couldn't read file"));
 
-                let identity = crate::protos::msp::SerializedIdentity {
+                    crate::protos::msp::SerializedIdentity {
                     mspid: env::var("MSP_ID").expect("MSP_ID environment variable not set"),
-                    id_bytes: public_cert.clone().into_inner(),
-                };
+                    id_bytes: public_cert.as_ref().to_vec(),
+                }};
 
                 //Generate random bytes for transaction id and signature header
                 let mut nonce = [0u8; crate::transaction::NONCE_LENGTH];
@@ -101,7 +99,7 @@ mod transaction_test {
                 };
 
                 let mut hasher = Hasher::new(MessageDigest::sha256()).unwrap();
-                hasher.update(public_cert.as_ref()).unwrap();
+                hasher.update(identity.id_bytes.as_slice()).unwrap();
                 let tls_cert_hash = hasher.finish().expect("Couldn't finalize hash").to_vec();
 
                 let chaincode_id = ChaincodeId {

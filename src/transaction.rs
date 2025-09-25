@@ -21,15 +21,6 @@ impl PreparedTransaction {
              Ok(response) => {
                  match response.into_inner().prepared_transaction {
                      Some(mut prepared_transaction) => {
-                         unsafe {
-                             println!(
-                                 "{}",
-                                 String::from_utf8_unchecked(
-                                     prepared_transaction.payload.clone()
-                                 )
-                             )
-                         }
-
                          //Generate random bytes for transaction id and signature header
                          let mut nonce = [0u8; NONCE_LENGTH];
                          openssl::rand::rand_bytes(&mut nonce)
@@ -148,7 +139,7 @@ impl TransaktionBuilder{
         };
 
         let mut hasher = openssl::hash::Hasher::new(openssl::hash::MessageDigest::sha256()).unwrap();
-        hasher.update(identity.encode_to_vec().as_slice()).unwrap();
+        hasher.update(identity.id_bytes.encode_to_vec().as_slice()).unwrap();
         let tls_cert_hash = hasher.finish().expect("Couldn't finalize hash").to_vec();
 
         let chaincode_id = crate::protos::protos::ChaincodeId {

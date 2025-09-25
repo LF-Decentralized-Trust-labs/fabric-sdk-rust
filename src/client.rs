@@ -42,6 +42,7 @@ impl Client {
 #[derive(Default)]
 pub struct ClientBuilder {
     identity: Option<crate::protos::msp::SerializedIdentity>,
+    tls : Option<Vec<u8>>,
     signer: Option<Signer>,
     scheme: Option<String>,
     authority: Option<String>,
@@ -73,6 +74,11 @@ impl ClientBuilder {
         Ok(self)
     }
 
+    pub fn with_tls(mut self, bytes: impl Into<Vec<u8>>) -> Result<ClientBuilder, BuilderError> {
+        self.tls = Some(bytes.into());
+        Ok(self)
+    }
+
     pub fn with_authority(
         mut self,
         authority: impl Into<String>,
@@ -96,9 +102,13 @@ impl ClientBuilder {
             Some(signer) => signer,
             None => return Err(BuilderError::MissingParameter("signer".into())),
         };
+        let tls = match self.tls {
+            Some(tls) => tls,
+            None => return Err(BuilderError::MissingParameter("tls".into())),
+        };
         //TODO Allow custom tls config
         let tls_config =
-            tonic::transport::ClientTlsConfig::new().ca_certificate(tonic::transport::Certificate::from_pem(identity.id_bytes.as_slice()));
+            tonic::transport::ClientTlsConfig::new().ca_certificate(tonic::transport::Certificate::from_pem(tls.as_slice()));
         let scheme = match self.scheme {
             Some(scheme) => scheme,
             None => "https".to_string(),
