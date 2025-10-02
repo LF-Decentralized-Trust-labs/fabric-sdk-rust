@@ -71,13 +71,13 @@ impl PreparedTransaction {
                         };
                         match gateway_client.submit(submit_request).await {
                             Ok(_) => Ok(result),
-                            Err(err) => Err(err.message().to_string()),
+                            Err(err) => Err(String::from_utf8_lossy(err.details()).into_owned()),
                         }
                     }
                     None => Err("None".into()),
                 }
             }
-            Err(err) => Err(err.message().to_string()),
+            Err(err) => Err(String::from_utf8_lossy(err.details()).into_owned()),
         }
     }
 }
