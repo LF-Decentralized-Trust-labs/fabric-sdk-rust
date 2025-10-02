@@ -4,11 +4,8 @@ use crate::{
     error::BuilderError,
     protos::{
         common::Payload,
-        gateway::{ChaincodeEventsRequest, ChaincodeEventsResponse},
         protos::{
-            ChaincodeAction, ChaincodeActionPayload, ChaincodeCall, ChaincodeEvent, LifecycleEvent,
-            ProcessedTransaction, ProposalResponsePayload, Response, Transaction,
-            TransactionAction,
+            ChaincodeAction, ChaincodeActionPayload, ProposalResponsePayload
         },
     },
     signer::Signer,
