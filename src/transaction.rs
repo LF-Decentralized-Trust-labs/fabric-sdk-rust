@@ -111,6 +111,7 @@ pub struct TransaktionBuilder {
     pub(crate) signer: Signer,
     pub(crate) channel_name: Option<String>,
     pub(crate) chaincode_id: Option<String>,
+    pub(crate) contract_id: Option<String>,
     pub(crate) function_name: Option<String>,
     pub(crate) function_args: Vec<Vec<u8>>,
 }
@@ -136,9 +137,25 @@ impl TransaktionBuilder {
     ) -> Result<TransaktionBuilder, BuilderError> {
         let id = id.into().trim().to_string();
         if id.is_empty() {
-            return Err(BuilderError::InvalidParameter("id cannot be empty".into()));
+            return Err(BuilderError::InvalidParameter(
+                "chaincode id cannot be empty".into(),
+            ));
         }
         self.chaincode_id = Some(id);
+        Ok(self)
+    }
+
+    pub fn with_contract_id(
+        mut self,
+        id: impl Into<String>,
+    ) -> Result<TransaktionBuilder, BuilderError> {
+        let id = id.into().trim().to_string();
+        if id.is_empty() {
+            return Err(BuilderError::InvalidParameter(
+                "contract id cannot be empty".into(),
+            ));
+        }
+        self.contract_id = Some(id);
         Ok(self)
     }
 
@@ -222,12 +239,20 @@ impl TransaktionBuilder {
         };
 
         let function_args = self.function_args;
-        let mut args = vec![function_name.as_bytes().to_vec()];
+        let mut args = if let Some(contract_id) = self.contract_id {
+            vec![
+                format!("{}:{}", contract_id, function_name)
+                    .as_bytes()
+                    .to_vec(),
+            ]
+        } else {
+            vec![function_name.as_bytes().to_vec()]
+        };
         for function_arg in function_args {
             args.push(function_arg);
         }
         let chaincode_input = crate::protos::protos::ChaincodeInput {
-            args,                                              //TODO Chaincode args
+            args,
             decorations: std::collections::HashMap::default(), //TODO Chaincode decorations
             is_init: false,
         };

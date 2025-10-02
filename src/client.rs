@@ -55,6 +55,7 @@ impl Client {
             signer: self.signer.clone(),
             channel_name: None,
             chaincode_id: None,
+            contract_id: None,
             function_name: None,
             function_args: vec![],
         }
@@ -66,17 +67,19 @@ impl Client {
 /// # Examples
 ///
 /// ```rust
-/// use fabric_sdk_rust::{client::ClientBuilder, identity::IdentityBuilder, signer::Signer};
+///  use fabric_sdk_rust::{client::ClientBuilder, identity::IdentityBuilder, signer::Signer};
 ///
-/// let identity = IdentityBuilder::from_pem(std::fs::read(msp_signcert_path)?.as_slice())
+///  let identity = IdentityBuilder::from_pem(std::fs::read(msp_signcert_path)?.as_slice())
 ///    .with_msp("Org1MSP")?
 ///    .build()?;
-/// let mut client = ClientBuilder::new()
+///  let mut client = ClientBuilder::new()
 ///    .with_identity(identity)?
-///    .with_tls(std::fs::read(tls_cert_path)?)?
-///    .with_signer(Signer::new(std::fs::read(keystore_path)?))?
+///    .with_tls(tlsca_bytes)?
+///    .with_sheme("https")?
+///    .with_authority("localhost:7051")?
+///    .with_signer(Signer::new(msp_key_bytes))?
 ///    .build()?;
-/// client.connect().await?;
+///  client.connect().await?;
 /// ```
 #[derive(Default)]
 pub struct ClientBuilder {
@@ -92,6 +95,15 @@ impl ClientBuilder {
         ClientBuilder::default()
     }
 
+    /// Identity from the IdentityBuilder
+    /// # Example
+    /// ```rust
+    ///let identity = IdentityBuilder::from_pem(pem_bytes)
+    ///    .with_msp("Org1MSP")?
+    ///    .build()?;
+    ///
+    ///let mut client = ClientBuilder::new()
+    ///    .with_identity(identity)?;
     pub fn with_identity(
         mut self,
         identity: crate::protos::msp::SerializedIdentity,
@@ -99,12 +111,18 @@ impl ClientBuilder {
         self.identity = Some(identity);
         Ok(self)
     }
-
+    /// Signer to sign the transactions
+    /// # Example
+    /// ```rust
+    ///  let mut client = ClientBuilder::new()
+    ///    .with_signer(Signer::new(msp_key_bytes))?
+    /// ```
     pub fn with_signer(mut self, signer: Signer) -> Result<ClientBuilder, BuilderError> {
         self.signer = Some(signer);
         Ok(self)
     }
 
+    /// Chooses which scheme is being used. Default value is `https`
     pub fn with_sheme(mut self, scheme: impl Into<String>) -> Result<ClientBuilder, BuilderError> {
         let scheme = scheme.into().trim().to_string();
         if scheme.is_empty() {
@@ -115,12 +133,13 @@ impl ClientBuilder {
         self.scheme = Some(scheme);
         Ok(self)
     }
-
+    /// Tls for the grpc connection to the node.
+    /// The needed pem from the test network can be found here: `organizations/peerOrganizations/org1.example.com/tlsca/tlsca.org1.example.com-cert.pem`
     pub fn with_tls(mut self, bytes: impl Into<Vec<u8>>) -> Result<ClientBuilder, BuilderError> {
         self.tls = Some(bytes.into());
         Ok(self)
     }
-
+    /// Authority for the grpc connection to the node. Default is `localhost:7051` which corresponds to the test network
     pub fn with_authority(
         mut self,
         authority: impl Into<String>,
@@ -134,7 +153,7 @@ impl ClientBuilder {
         self.authority = Some(authority);
         Ok(self)
     }
-
+    /// Collects and validates the values from the builder to build the client. Building does not start the connection to the node.
     pub fn build(self) -> Result<Client, BuilderError> {
         let identity = match self.identity {
             Some(identity) => identity,
