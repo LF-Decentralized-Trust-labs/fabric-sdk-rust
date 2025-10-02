@@ -50,7 +50,6 @@ mod transaction_test {
             .build()
             .unwrap()
             .block_on(async {
-
                 let chaincode_name = env::var("CHAINCODE_NAME")
                     .expect("CHAINCODE_NAME environment variable not set");
                 let chaincode_version = env::var("CHAINCODE_VERSION")
@@ -77,13 +76,15 @@ mod transaction_test {
                     let identity_pm_path = env::var("PEER1_USER1_CERT_PATH")
                         .expect("PEER1_USER1_CERT_PATH environment variable not set");
 
-                    let public_cert =
-                        Certificate::from_pem(fs::read(identity_pm_path).expect("Couldn't read file"));
+                    let public_cert = Certificate::from_pem(
+                        fs::read(identity_pm_path).expect("Couldn't read file"),
+                    );
 
                     crate::protos::msp::SerializedIdentity {
-                    mspid: env::var("MSP_ID").expect("MSP_ID environment variable not set"),
-                    id_bytes: public_cert.as_ref().to_vec(),
-                }};
+                        mspid: env::var("MSP_ID").expect("MSP_ID environment variable not set"),
+                        id_bytes: public_cert.as_ref().to_vec(),
+                    }
+                };
 
                 //Generate random bytes for transaction id and signature header
                 let mut nonce = [0u8; crate::transaction::NONCE_LENGTH];
