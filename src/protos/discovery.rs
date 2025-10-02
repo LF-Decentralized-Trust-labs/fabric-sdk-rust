@@ -118,10 +118,8 @@ pub struct ConfigQuery {}
 pub struct ConfigResult {
     /// msps is a map from MSP_ID to FabricMSPConfig
     #[prost(map = "string, message", tag = "1")]
-    pub msps: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        super::msp::FabricMspConfig,
-    >,
+    pub msps:
+        ::std::collections::HashMap<::prost::alloc::string::String, super::msp::FabricMspConfig>,
     /// orderers is a map from MSP_ID to endpoint lists of orderers
     #[prost(map = "string, message", tag = "2")]
     pub orderers: ::std::collections::HashMap<::prost::alloc::string::String, Endpoints>,
@@ -179,10 +177,7 @@ pub struct EndorsementDescriptor {
     pub chaincode: ::prost::alloc::string::String,
     /// Specifies the endorsers, separated to groups.
     #[prost(map = "string, message", tag = "2")]
-    pub endorsers_by_groups: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        Peers,
-    >,
+    pub endorsers_by_groups: ::std::collections::HashMap<::prost::alloc::string::String, Peers>,
     /// Specifies options of fulfulling the endorsement policy.
     /// Each option lists the group names, and the amount of signatures needed
     /// from each group.
@@ -196,10 +191,7 @@ pub struct Layout {
     /// Specifies how many non repeated signatures of each group
     /// are needed for endorsement
     #[prost(map = "string, uint32", tag = "1")]
-    pub quantities_by_group: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        u32,
-    >,
+    pub quantities_by_group: ::std::collections::HashMap<::prost::alloc::string::String, u32>,
 }
 /// Peers contains a list of Peer(s)
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -248,10 +240,10 @@ pub mod discovery_client {
         dead_code,
         missing_docs,
         clippy::wildcard_imports,
-        clippy::let_unit_value,
+        clippy::let_unit_value
     )]
-    use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    use tonic::codegen::*;
     /// Discovery defines a service that serves information about the fabric network
     /// like which peers, orderers, chaincodes, etc.
     #[derive(Debug, Clone)]
@@ -281,14 +273,13 @@ pub mod discovery_client {
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
             T: tonic::codegen::Service<
-                http::Request<tonic::body::Body>,
-                Response = http::Response<
-                    <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                    http::Request<tonic::body::Body>,
+                    Response = http::Response<
+                        <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                    >,
                 >,
-            >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::Body>,
-            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::Body>>>::Error:
+                Into<StdError> + std::marker::Send + std::marker::Sync,
         {
             DiscoveryClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -328,18 +319,11 @@ pub mod discovery_client {
             &mut self,
             request: impl tonic::IntoRequest<super::SignedRequest>,
         ) -> std::result::Result<tonic::Response<super::Response>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(format!("Service was not ready: {}", e.into()))
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/discovery.Discovery/Discover",
-            );
+            let path = http::uri::PathAndQuery::from_static("/discovery.Discovery/Discover");
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("discovery.Discovery", "Discover"));
@@ -354,7 +338,7 @@ pub mod discovery_server {
         dead_code,
         missing_docs,
         clippy::wildcard_imports,
-        clippy::let_unit_value,
+        clippy::let_unit_value
     )]
     use tonic::codegen::*;
     /// Generated trait containing gRPC methods that should be implemented for use with DiscoveryServer.
@@ -389,10 +373,7 @@ pub mod discovery_server {
                 max_encoding_message_size: None,
             }
         }
-        pub fn with_interceptor<F>(
-            inner: T,
-            interceptor: F,
-        ) -> InterceptedService<Self, F>
+        pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
         where
             F: tonic::service::Interceptor,
         {
@@ -447,21 +428,16 @@ pub mod discovery_server {
                 "/discovery.Discovery/Discover" => {
                     #[allow(non_camel_case_types)]
                     struct DiscoverSvc<T: Discovery>(pub Arc<T>);
-                    impl<T: Discovery> tonic::server::UnaryService<super::SignedRequest>
-                    for DiscoverSvc<T> {
+                    impl<T: Discovery> tonic::server::UnaryService<super::SignedRequest> for DiscoverSvc<T> {
                         type Response = super::Response;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::SignedRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as Discovery>::discover(&inner, request).await
-                            };
+                            let fut =
+                                async move { <T as Discovery>::discover(&inner, request).await };
                             Box::pin(fut)
                         }
                     }
@@ -487,25 +463,19 @@ pub mod discovery_server {
                     };
                     Box::pin(fut)
                 }
-                _ => {
-                    Box::pin(async move {
-                        let mut response = http::Response::new(
-                            tonic::body::Body::default(),
-                        );
-                        let headers = response.headers_mut();
-                        headers
-                            .insert(
-                                tonic::Status::GRPC_STATUS,
-                                (tonic::Code::Unimplemented as i32).into(),
-                            );
-                        headers
-                            .insert(
-                                http::header::CONTENT_TYPE,
-                                tonic::metadata::GRPC_CONTENT_TYPE,
-                            );
-                        Ok(response)
-                    })
-                }
+                _ => Box::pin(async move {
+                    let mut response = http::Response::new(tonic::body::Body::default());
+                    let headers = response.headers_mut();
+                    headers.insert(
+                        tonic::Status::GRPC_STATUS,
+                        (tonic::Code::Unimplemented as i32).into(),
+                    );
+                    headers.insert(
+                        http::header::CONTENT_TYPE,
+                        tonic::metadata::GRPC_CONTENT_TYPE,
+                    );
+                    Ok(response)
+                }),
             }
         }
     }

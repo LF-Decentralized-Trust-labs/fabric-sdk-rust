@@ -11,17 +11,7 @@ pub struct TxReadWriteSet {
 }
 /// Nested message and enum types in `TxReadWriteSet`.
 pub mod tx_read_write_set {
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum DataModel {
         Kv = 0,

@@ -67,17 +67,7 @@ pub mod seek_info {
     /// if FAIL_IF_NOT_READY is specified, the reply will return an error indicating that the block is not
     /// found.  To request that all blocks be returned indefinitely as they are created, behavior should be
     /// set to BLOCK_UNTIL_READY and the stop should be set to specified with a number of MAX_UINT64
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum SeekBehavior {
         BlockUntilReady = 0,
@@ -111,17 +101,7 @@ pub mod seek_info {
     /// when attempting to recover from a crash or other corruption, it's desirable to force an orderer to respond
     /// with blocks on a best effort basis, even if the backing consensus implementation is in an errored state.
     /// In this case, set the SeekErrorResponse to BEST_EFFORT to ignore the consenter errors.
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum SeekErrorResponse {
         Strict = 0,
@@ -151,17 +131,7 @@ pub mod seek_info {
     /// the orderer will stream blocks back to the peer. This is the default behavior. If HEADER_WITH_SIG is  specified, the
     /// orderer will stream only a the header and the signature, and the payload field will be set to nil. This allows
     /// the requester to ascertain that the respective signed block exists in the orderer (or cluster of orderers).
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum SeekContentType {
         Block = 0,
@@ -210,10 +180,10 @@ pub mod atomic_broadcast_client {
         dead_code,
         missing_docs,
         clippy::wildcard_imports,
-        clippy::let_unit_value,
+        clippy::let_unit_value
     )]
-    use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    use tonic::codegen::*;
     #[derive(Debug, Clone)]
     pub struct AtomicBroadcastClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -241,14 +211,13 @@ pub mod atomic_broadcast_client {
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
             T: tonic::codegen::Service<
-                http::Request<tonic::body::Body>,
-                Response = http::Response<
-                    <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                    http::Request<tonic::body::Body>,
+                    Response = http::Response<
+                        <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                    >,
                 >,
-            >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::Body>,
-            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::Body>>>::Error:
+                Into<StdError> + std::marker::Send + std::marker::Sync,
         {
             AtomicBroadcastClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -286,25 +255,16 @@ pub mod atomic_broadcast_client {
         /// broadcast receives a reply of Acknowledgement for each common.Envelope in order, indicating success or type of failure
         pub async fn broadcast(
             &mut self,
-            request: impl tonic::IntoStreamingRequest<
-                Message = super::super::common::Envelope,
-            >,
+            request: impl tonic::IntoStreamingRequest<Message = super::super::common::Envelope>,
         ) -> std::result::Result<
             tonic::Response<tonic::codec::Streaming<super::BroadcastResponse>>,
             tonic::Status,
         > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(format!("Service was not ready: {}", e.into()))
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/orderer.AtomicBroadcast/Broadcast",
-            );
+            let path = http::uri::PathAndQuery::from_static("/orderer.AtomicBroadcast/Broadcast");
             let mut req = request.into_streaming_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("orderer.AtomicBroadcast", "Broadcast"));
@@ -313,25 +273,16 @@ pub mod atomic_broadcast_client {
         /// deliver first requires an Envelope of type DELIVER_SEEK_INFO with Payload data as a mashaled SeekInfo message, then a stream of block replies is received.
         pub async fn deliver(
             &mut self,
-            request: impl tonic::IntoStreamingRequest<
-                Message = super::super::common::Envelope,
-            >,
+            request: impl tonic::IntoStreamingRequest<Message = super::super::common::Envelope>,
         ) -> std::result::Result<
             tonic::Response<tonic::codec::Streaming<super::DeliverResponse>>,
             tonic::Status,
         > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(format!("Service was not ready: {}", e.into()))
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/orderer.AtomicBroadcast/Deliver",
-            );
+            let path = http::uri::PathAndQuery::from_static("/orderer.AtomicBroadcast/Deliver");
             let mut req = request.into_streaming_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("orderer.AtomicBroadcast", "Deliver"));
@@ -346,7 +297,7 @@ pub mod atomic_broadcast_server {
         dead_code,
         missing_docs,
         clippy::wildcard_imports,
-        clippy::let_unit_value,
+        clippy::let_unit_value
     )]
     use tonic::codegen::*;
     /// Generated trait containing gRPC methods that should be implemented for use with AtomicBroadcastServer.
@@ -355,8 +306,7 @@ pub mod atomic_broadcast_server {
         /// Server streaming response type for the Broadcast method.
         type BroadcastStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<super::BroadcastResponse, tonic::Status>,
-            >
-            + std::marker::Send
+            > + std::marker::Send
             + 'static;
         /// broadcast receives a reply of Acknowledgement for each common.Envelope in order, indicating success or type of failure
         async fn broadcast(
@@ -366,8 +316,7 @@ pub mod atomic_broadcast_server {
         /// Server streaming response type for the Deliver method.
         type DeliverStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<super::DeliverResponse, tonic::Status>,
-            >
-            + std::marker::Send
+            > + std::marker::Send
             + 'static;
         /// deliver first requires an Envelope of type DELIVER_SEEK_INFO with Payload data as a mashaled SeekInfo message, then a stream of block replies is received.
         async fn deliver(
@@ -396,10 +345,7 @@ pub mod atomic_broadcast_server {
                 max_encoding_message_size: None,
             }
         }
-        pub fn with_interceptor<F>(
-            inner: T,
-            interceptor: F,
-        ) -> InterceptedService<Self, F>
+        pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
         where
             F: tonic::service::Interceptor,
         {
@@ -454,16 +400,14 @@ pub mod atomic_broadcast_server {
                 "/orderer.AtomicBroadcast/Broadcast" => {
                     #[allow(non_camel_case_types)]
                     struct BroadcastSvc<T: AtomicBroadcast>(pub Arc<T>);
-                    impl<
-                        T: AtomicBroadcast,
-                    > tonic::server::StreamingService<super::super::common::Envelope>
-                    for BroadcastSvc<T> {
+                    impl<T: AtomicBroadcast>
+                        tonic::server::StreamingService<super::super::common::Envelope>
+                        for BroadcastSvc<T>
+                    {
                         type Response = super::BroadcastResponse;
                         type ResponseStream = T::BroadcastStream;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::ResponseStream>,
-                            tonic::Status,
-                        >;
+                        type Future =
+                            BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<
@@ -502,16 +446,14 @@ pub mod atomic_broadcast_server {
                 "/orderer.AtomicBroadcast/Deliver" => {
                     #[allow(non_camel_case_types)]
                     struct DeliverSvc<T: AtomicBroadcast>(pub Arc<T>);
-                    impl<
-                        T: AtomicBroadcast,
-                    > tonic::server::StreamingService<super::super::common::Envelope>
-                    for DeliverSvc<T> {
+                    impl<T: AtomicBroadcast>
+                        tonic::server::StreamingService<super::super::common::Envelope>
+                        for DeliverSvc<T>
+                    {
                         type Response = super::DeliverResponse;
                         type ResponseStream = T::DeliverStream;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::ResponseStream>,
-                            tonic::Status,
-                        >;
+                        type Future =
+                            BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<
@@ -547,25 +489,19 @@ pub mod atomic_broadcast_server {
                     };
                     Box::pin(fut)
                 }
-                _ => {
-                    Box::pin(async move {
-                        let mut response = http::Response::new(
-                            tonic::body::Body::default(),
-                        );
-                        let headers = response.headers_mut();
-                        headers
-                            .insert(
-                                tonic::Status::GRPC_STATUS,
-                                (tonic::Code::Unimplemented as i32).into(),
-                            );
-                        headers
-                            .insert(
-                                http::header::CONTENT_TYPE,
-                                tonic::metadata::GRPC_CONTENT_TYPE,
-                            );
-                        Ok(response)
-                    })
-                }
+                _ => Box::pin(async move {
+                    let mut response = http::Response::new(tonic::body::Body::default());
+                    let headers = response.headers_mut();
+                    headers.insert(
+                        tonic::Status::GRPC_STATUS,
+                        (tonic::Code::Unimplemented as i32).into(),
+                    );
+                    headers.insert(
+                        http::header::CONTENT_TYPE,
+                        tonic::metadata::GRPC_CONTENT_TYPE,
+                    );
+                    Ok(response)
+                }),
             }
         }
     }
@@ -604,17 +540,7 @@ pub mod consensus_type {
     /// State defines the orderer mode of operation, typically for consensus-type migration.
     /// NORMAL is during normal operation, when consensus-type migration is not, and can not, take place.
     /// MAINTENANCE is when the consensus-type can be changed.
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum State {
         Normal = 0,
@@ -782,10 +708,10 @@ pub mod cluster_node_service_client {
         dead_code,
         missing_docs,
         clippy::wildcard_imports,
-        clippy::let_unit_value,
+        clippy::let_unit_value
     )]
-    use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    use tonic::codegen::*;
     /// Service ClusterNodeService defines communication between cluster members.
     #[derive(Debug, Clone)]
     pub struct ClusterNodeServiceClient<T> {
@@ -814,14 +740,13 @@ pub mod cluster_node_service_client {
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
             T: tonic::codegen::Service<
-                http::Request<tonic::body::Body>,
-                Response = http::Response<
-                    <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                    http::Request<tonic::body::Body>,
+                    Response = http::Response<
+                        <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                    >,
                 >,
-            >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::Body>,
-            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::Body>>>::Error:
+                Into<StdError> + std::marker::Send + std::marker::Sync,
         {
             ClusterNodeServiceClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -859,27 +784,16 @@ pub mod cluster_node_service_client {
         /// Step passes an implementation-specific message to another cluster member.
         pub async fn step(
             &mut self,
-            request: impl tonic::IntoStreamingRequest<
-                Message = super::ClusterNodeServiceStepRequest,
-            >,
+            request: impl tonic::IntoStreamingRequest<Message = super::ClusterNodeServiceStepRequest>,
         ) -> std::result::Result<
-            tonic::Response<
-                tonic::codec::Streaming<super::ClusterNodeServiceStepResponse>,
-            >,
+            tonic::Response<tonic::codec::Streaming<super::ClusterNodeServiceStepResponse>>,
             tonic::Status,
         > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(format!("Service was not ready: {}", e.into()))
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/orderer.ClusterNodeService/Step",
-            );
+            let path = http::uri::PathAndQuery::from_static("/orderer.ClusterNodeService/Step");
             let mut req = request.into_streaming_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("orderer.ClusterNodeService", "Step"));
@@ -894,7 +808,7 @@ pub mod cluster_node_service_server {
         dead_code,
         missing_docs,
         clippy::wildcard_imports,
-        clippy::let_unit_value,
+        clippy::let_unit_value
     )]
     use tonic::codegen::*;
     /// Generated trait containing gRPC methods that should be implemented for use with ClusterNodeServiceServer.
@@ -902,19 +816,13 @@ pub mod cluster_node_service_server {
     pub trait ClusterNodeService: std::marker::Send + std::marker::Sync + 'static {
         /// Server streaming response type for the Step method.
         type StepStream: tonic::codegen::tokio_stream::Stream<
-                Item = std::result::Result<
-                    super::ClusterNodeServiceStepResponse,
-                    tonic::Status,
-                >,
-            >
-            + std::marker::Send
+                Item = std::result::Result<super::ClusterNodeServiceStepResponse, tonic::Status>,
+            > + std::marker::Send
             + 'static;
         /// Step passes an implementation-specific message to another cluster member.
         async fn step(
             &self,
-            request: tonic::Request<
-                tonic::Streaming<super::ClusterNodeServiceStepRequest>,
-            >,
+            request: tonic::Request<tonic::Streaming<super::ClusterNodeServiceStepRequest>>,
         ) -> std::result::Result<tonic::Response<Self::StepStream>, tonic::Status>;
     }
     /// Service ClusterNodeService defines communication between cluster members.
@@ -939,10 +847,7 @@ pub mod cluster_node_service_server {
                 max_encoding_message_size: None,
             }
         }
-        pub fn with_interceptor<F>(
-            inner: T,
-            interceptor: F,
-        ) -> InterceptedService<Self, F>
+        pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
         where
             F: tonic::service::Interceptor,
         {
@@ -997,17 +902,14 @@ pub mod cluster_node_service_server {
                 "/orderer.ClusterNodeService/Step" => {
                     #[allow(non_camel_case_types)]
                     struct StepSvc<T: ClusterNodeService>(pub Arc<T>);
-                    impl<
-                        T: ClusterNodeService,
-                    > tonic::server::StreamingService<
-                        super::ClusterNodeServiceStepRequest,
-                    > for StepSvc<T> {
+                    impl<T: ClusterNodeService>
+                        tonic::server::StreamingService<super::ClusterNodeServiceStepRequest>
+                        for StepSvc<T>
+                    {
                         type Response = super::ClusterNodeServiceStepResponse;
                         type ResponseStream = T::StepStream;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::ResponseStream>,
-                            tonic::Status,
-                        >;
+                        type Future =
+                            BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<
@@ -1043,25 +945,19 @@ pub mod cluster_node_service_server {
                     };
                     Box::pin(fut)
                 }
-                _ => {
-                    Box::pin(async move {
-                        let mut response = http::Response::new(
-                            tonic::body::Body::default(),
-                        );
-                        let headers = response.headers_mut();
-                        headers
-                            .insert(
-                                tonic::Status::GRPC_STATUS,
-                                (tonic::Code::Unimplemented as i32).into(),
-                            );
-                        headers
-                            .insert(
-                                http::header::CONTENT_TYPE,
-                                tonic::metadata::GRPC_CONTENT_TYPE,
-                            );
-                        Ok(response)
-                    })
-                }
+                _ => Box::pin(async move {
+                    let mut response = http::Response::new(tonic::body::Body::default());
+                    let headers = response.headers_mut();
+                    headers.insert(
+                        tonic::Status::GRPC_STATUS,
+                        (tonic::Code::Unimplemented as i32).into(),
+                    );
+                    headers.insert(
+                        http::header::CONTENT_TYPE,
+                        tonic::metadata::GRPC_CONTENT_TYPE,
+                    );
+                    Ok(response)
+                }),
             }
         }
     }
@@ -1160,10 +1056,10 @@ pub mod cluster_client {
         dead_code,
         missing_docs,
         clippy::wildcard_imports,
-        clippy::let_unit_value,
+        clippy::let_unit_value
     )]
-    use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    use tonic::codegen::*;
     /// Cluster defines communication between cluster members.
     #[derive(Debug, Clone)]
     pub struct ClusterClient<T> {
@@ -1192,14 +1088,13 @@ pub mod cluster_client {
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
             T: tonic::codegen::Service<
-                http::Request<tonic::body::Body>,
-                Response = http::Response<
-                    <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                    http::Request<tonic::body::Body>,
+                    Response = http::Response<
+                        <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                    >,
                 >,
-            >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::Body>,
-            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::Body>>>::Error:
+                Into<StdError> + std::marker::Send + std::marker::Sync,
         {
             ClusterClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -1242,18 +1137,14 @@ pub mod cluster_client {
             tonic::Response<tonic::codec::Streaming<super::StepResponse>>,
             tonic::Status,
         > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(format!("Service was not ready: {}", e.into()))
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/orderer.Cluster/Step");
             let mut req = request.into_streaming_request();
-            req.extensions_mut().insert(GrpcMethod::new("orderer.Cluster", "Step"));
+            req.extensions_mut()
+                .insert(GrpcMethod::new("orderer.Cluster", "Step"));
             self.inner.streaming(req, path, codec).await
         }
     }
@@ -1265,7 +1156,7 @@ pub mod cluster_server {
         dead_code,
         missing_docs,
         clippy::wildcard_imports,
-        clippy::let_unit_value,
+        clippy::let_unit_value
     )]
     use tonic::codegen::*;
     /// Generated trait containing gRPC methods that should be implemented for use with ClusterServer.
@@ -1274,8 +1165,7 @@ pub mod cluster_server {
         /// Server streaming response type for the Step method.
         type StepStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<super::StepResponse, tonic::Status>,
-            >
-            + std::marker::Send
+            > + std::marker::Send
             + 'static;
         /// Step passes an implementation-specific message to another cluster member.
         async fn step(
@@ -1305,10 +1195,7 @@ pub mod cluster_server {
                 max_encoding_message_size: None,
             }
         }
-        pub fn with_interceptor<F>(
-            inner: T,
-            interceptor: F,
-        ) -> InterceptedService<Self, F>
+        pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
         where
             F: tonic::service::Interceptor,
         {
@@ -1363,22 +1250,17 @@ pub mod cluster_server {
                 "/orderer.Cluster/Step" => {
                     #[allow(non_camel_case_types)]
                     struct StepSvc<T: Cluster>(pub Arc<T>);
-                    impl<T: Cluster> tonic::server::StreamingService<super::StepRequest>
-                    for StepSvc<T> {
+                    impl<T: Cluster> tonic::server::StreamingService<super::StepRequest> for StepSvc<T> {
                         type Response = super::StepResponse;
                         type ResponseStream = T::StepStream;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::ResponseStream>,
-                            tonic::Status,
-                        >;
+                        type Future =
+                            BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<tonic::Streaming<super::StepRequest>>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as Cluster>::step(&inner, request).await
-                            };
+                            let fut = async move { <T as Cluster>::step(&inner, request).await };
                             Box::pin(fut)
                         }
                     }
@@ -1404,25 +1286,19 @@ pub mod cluster_server {
                     };
                     Box::pin(fut)
                 }
-                _ => {
-                    Box::pin(async move {
-                        let mut response = http::Response::new(
-                            tonic::body::Body::default(),
-                        );
-                        let headers = response.headers_mut();
-                        headers
-                            .insert(
-                                tonic::Status::GRPC_STATUS,
-                                (tonic::Code::Unimplemented as i32).into(),
-                            );
-                        headers
-                            .insert(
-                                http::header::CONTENT_TYPE,
-                                tonic::metadata::GRPC_CONTENT_TYPE,
-                            );
-                        Ok(response)
-                    })
-                }
+                _ => Box::pin(async move {
+                    let mut response = http::Response::new(tonic::body::Body::default());
+                    let headers = response.headers_mut();
+                    headers.insert(
+                        tonic::Status::GRPC_STATUS,
+                        (tonic::Code::Unimplemented as i32).into(),
+                    );
+                    headers.insert(
+                        http::header::CONTENT_TYPE,
+                        tonic::metadata::GRPC_CONTENT_TYPE,
+                    );
+                    Ok(response)
+                }),
             }
         }
     }
