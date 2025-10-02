@@ -4,9 +4,7 @@ use crate::{
     error::BuilderError,
     protos::{
         common::Payload,
-        protos::{
-            ChaincodeAction, ChaincodeActionPayload, ProposalResponsePayload
-        },
+        protos::{ChaincodeAction, ChaincodeActionPayload, ProposalResponsePayload},
     },
     signer::Signer,
 };
@@ -91,7 +89,7 @@ pub struct TransaktionBuilder {
     pub(crate) channel_name: Option<String>,
     pub(crate) chaincode_id: Option<String>,
     pub(crate) function_name: Option<String>,
-    pub(crate) function_args: Vec<String>,
+    pub(crate) function_args: Vec<Vec<u8>>,
 }
 
 impl TransaktionBuilder {
@@ -135,11 +133,17 @@ impl TransaktionBuilder {
         Ok(self)
     }
 
-    pub fn with_function_args(
+    pub fn with_function_args<T, U>(
         mut self,
-        args: Vec<String>,
-    ) -> Result<TransaktionBuilder, BuilderError> {
-        self.function_args = args;
+        args: T,
+    ) -> Result<TransaktionBuilder, BuilderError>
+    where
+        T: IntoIterator<Item = U>,
+        U: AsRef<[u8]>
+    {
+        for arg in args{
+            self.function_args.push(arg.as_ref().into());
+        }
         Ok(self)
     }
 
@@ -156,7 +160,6 @@ impl TransaktionBuilder {
             Some(function_name) => function_name,
             None => return Err(BuilderError::MissingParameter("function_name".into())),
         };
-        let function_args = self.function_args;
 
         let identity = self.identity;
 
@@ -198,8 +201,13 @@ impl TransaktionBuilder {
             tls_cert_hash, // If mutual TLS is employed, this represents the hash of the client's TLS certificate
         };
 
+        let function_args = self.function_args;
+        let mut args = vec![function_name.as_bytes().to_vec()];
+        for function_arg in function_args{
+            args.push(function_arg);
+        }
         let chaincode_input = crate::protos::protos::ChaincodeInput {
-            args: vec![function_name.as_bytes().to_vec()], //TODO Chaincode args
+            args, //TODO Chaincode args
             decorations: std::collections::HashMap::default(), //TODO Chaincode decorations
             is_init: false,
         };
