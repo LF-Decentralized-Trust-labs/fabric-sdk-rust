@@ -4,6 +4,8 @@
 ///
 /// # Example
 /// ```rust
+/// use fabric_sdk_rust::{client::ClientBuilder, signer::Signer};
+///
 /// let signer = Signer::new(std::fs::read(keystore_path)?);
 /// let mut client = ClientBuilder::new().with_signer(signer)?;
 /// ```

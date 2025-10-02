@@ -98,6 +98,8 @@ impl ClientBuilder {
     /// Identity from the IdentityBuilder
     /// # Example
     /// ```rust
+    ///use fabric_sdk_rust::{client::ClientBuilder, identity::IdentityBuilder, signer::Signer};
+    ///
     ///let identity = IdentityBuilder::from_pem(pem_bytes)
     ///    .with_msp("Org1MSP")?
     ///    .build()?;
