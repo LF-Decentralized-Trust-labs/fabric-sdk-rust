@@ -14,23 +14,22 @@ Here is an simple code example how to use the library:
 ```rust
 use std::error::Error;
 
-use fabric_sdk_rust::{client::ClientBuilder, identity::IdentityBuilder};
+use fabric_sdk_rust::{client::ClientBuilder, identity::IdentityBuilder, signer::Signer};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let identity = IdentityBuilder::from_pem(std::fs::read_to_string(
-        "/home/user/fabric/fabric-samples/test-network/organizations/peerOrganizations/org1.example.com/users/User1@org1.example.com/msp/signcerts/User1@org1.example.com-cert.pem"
-    )?.as_bytes())
+    let pem_bytes = include_bytes!("/home/user/fabric/fabric-samples/test-network/organizations/peerOrganizations/org1.example.com/users/User1@org1.example.com/msp/signcerts/User1@org1.example.com-cert.pem");
+    let tlsca_bytes = include_bytes!("/home/user/fabric/fabric-samples/test-network/organizations/peerOrganizations/org1.example.com/tlsca/tlsca.org1.example.com-cert.pem");
+    let msp_key_bytes = include_bytes!("/home/user/fabric/fabric-samples/test-network/organizations/peerOrganizations/org1.example.com/users/User1@org1.example.com/msp/keystore/priv_sk");
+
+    let identity = IdentityBuilder::from_pem(pem_bytes)
         .with_msp("Org1MSP")?
         .build()?;
 
     let mut client = ClientBuilder::new()
         .with_identity(identity)?
-        .with_tls(std::fs::read("/home/user/fabric/fabric-samples/test-network/organizations/peerOrganizations/org1.example.com/tlsca/tlsca.org1.example.com-cert.pem")?)?
-        .with_signer(fabric_sdk_rust::signer::Signer{
-            pkey: std::fs::read(
-                "/home/user/fabric/fabric-samples/test-network/organizations/peerOrganizations/org1.example.com/users/User1@org1.example.com/msp/keystore/priv_sk")?
-        })?
+        .with_tls(tlsca_bytes)?
+        .with_signer(Signer::new(msp_key_bytes))?
         .build()?;
     client.connect().await?;
 
@@ -39,15 +38,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .with_channel_name("mychannel")?
         .with_chaincode_id("basic")?
         .with_function_name("CreateAsset")?
-        .with_function_args(["assetCustom","orange","10","Frank","600"])?
+        .with_function_args(["assetCustom", "orange", "10", "Frank", "600"])?
         .build();
     match tx_builder {
         Ok(prepared_transaction) => match prepared_transaction.submit().await {
-                Ok(result) => {
-                    println!("{}", String::from_utf8_lossy(result.as_slice()));
-                }
-                Err(err) => println!("{}", err),
-            },
+            Ok(result) => {
+                println!("{}", String::from_utf8_lossy(result.as_slice()));
+            }
+            Err(err) => println!("{}", err),
+        },
         Err(err) => println!("{}", err),
     }
 
@@ -60,11 +59,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .build();
     match tx_builder {
         Ok(prepared_transaction) => match prepared_transaction.submit().await {
-                Ok(result) => {
-                    println!("{}", String::from_utf8_lossy(result.as_slice()));
-                }
-                Err(err) => println!("{}", err),
-            },
+            Ok(result) => {
+                println!("{}", String::from_utf8_lossy(result.as_slice()));
+            }
+            Err(err) => println!("{}", err),
+        },
         Err(err) => println!("{}", err),
     }
     Ok(())

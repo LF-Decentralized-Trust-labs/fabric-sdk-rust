@@ -82,6 +82,29 @@ impl PreparedTransaction {
     }
 }
 
+/// A builder for creating `PreparedTransaction` instances, from which you can submit the transaction.
+/// build() only prepares the transaction. It will not send anything to the network.
+///
+/// # Examples
+///
+/// ```rust
+///  let tx_builder = client
+///    .get_transaction_builder()
+///    .with_channel_name("mychannel")?
+///    .with_chaincode_id("basic")?
+///    .with_function_name("CreateAsset")?
+///    .with_function_args(["assetCustom", "orange", "10", "Frank", "600"])?
+///    .build();
+///  match tx_builder {
+///    Ok(prepared_transaction) => match prepared_transaction.submit().await {
+///        Ok(result) => {
+///            println!("{}", String::from_utf8_lossy(result.as_slice()));
+///        }
+///        Err(err) => println!("{}", err),
+///    },
+///    Err(err) => println!("{}", err),
+///  }
+/// ```
 pub struct TransaktionBuilder {
     pub(crate) identity: crate::protos::msp::SerializedIdentity,
     pub(crate) channel: tonic::transport::Channel,
@@ -133,15 +156,12 @@ impl TransaktionBuilder {
         Ok(self)
     }
 
-    pub fn with_function_args<T, U>(
-        mut self,
-        args: T,
-    ) -> Result<TransaktionBuilder, BuilderError>
+    pub fn with_function_args<T, U>(mut self, args: T) -> Result<TransaktionBuilder, BuilderError>
     where
         T: IntoIterator<Item = U>,
-        U: AsRef<[u8]>
+        U: AsRef<[u8]>,
     {
-        for arg in args{
+        for arg in args {
             self.function_args.push(arg.as_ref().into());
         }
         Ok(self)
@@ -203,11 +223,11 @@ impl TransaktionBuilder {
 
         let function_args = self.function_args;
         let mut args = vec![function_name.as_bytes().to_vec()];
-        for function_arg in function_args{
+        for function_arg in function_args {
             args.push(function_arg);
         }
         let chaincode_input = crate::protos::protos::ChaincodeInput {
-            args, //TODO Chaincode args
+            args,                                              //TODO Chaincode args
             decorations: std::collections::HashMap::default(), //TODO Chaincode decorations
             is_init: false,
         };
@@ -286,6 +306,14 @@ fn create_transaction_id(nonce: &[u8], creator: &[u8]) -> String {
     hex::encode(hash)
 }
 
+/// Signs a given message using an ECDSA key derived from PEM bytes.
+/// Ring does not support private-key-only pkcs8 files, which is being used by hyperledger's test network. This is why openssl is being used here and in the project generally.
+/// # Arguments
+/// * `message` - A byte slice representing the message to be signed.
+/// * `pem_bytes` - A byte slice representing the private key in PEM format.
+///
+/// # Returns
+/// A vector of bytes representing the signature.
 fn sign_message(message: &[u8], pem_bytes: &[u8]) -> Vec<u8> {
     use p256::pkcs8::der::Encode;
 

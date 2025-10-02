@@ -25,7 +25,29 @@ impl Client {
         );
         Ok(())
     }
-
+    /// A builder for creating `PreparedTransaction` instances, from which you can submit the transaction.
+    /// build() only prepares the transaction. It will not send anything to the network.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    ///  let tx_builder = client
+    ///    .get_transaction_builder()
+    ///    .with_channel_name("mychannel")?
+    ///    .with_chaincode_id("basic")?
+    ///    .with_function_name("CreateAsset")?
+    ///    .with_function_args(["assetCustom", "orange", "10", "Frank", "600"])?
+    ///    .build();
+    ///  match tx_builder {
+    ///    Ok(prepared_transaction) => match prepared_transaction.submit().await {
+    ///        Ok(result) => {
+    ///            println!("{}", String::from_utf8_lossy(result.as_slice()));
+    ///        }
+    ///        Err(err) => println!("{}", err),
+    ///    },
+    ///    Err(err) => println!("{}", err),
+    ///  }
+    /// ```
     pub fn get_transaction_builder(&self) -> TransaktionBuilder {
         TransaktionBuilder {
             identity: self.identity.clone(),
@@ -39,6 +61,23 @@ impl Client {
     }
 }
 
+/// The `ClientBuilder` struct is used to configure and build a `Client` instance. It provides methods to set various parameters required for creating a client, such as identity, signer, TLS configuration, scheme, and authority.
+///
+/// # Examples
+///
+/// ```rust
+/// use fabric_sdk_rust::{client::ClientBuilder, identity::IdentityBuilder, signer::Signer};
+///
+/// let identity = IdentityBuilder::from_pem(std::fs::read(msp_signcert_path)?.as_slice())
+///    .with_msp("Org1MSP")?
+///    .build()?;
+/// let mut client = ClientBuilder::new()
+///    .with_identity(identity)?
+///    .with_tls(std::fs::read(tls_cert_path)?)?
+///    .with_signer(Signer::new(std::fs::read(keystore_path)?))?
+///    .build()?;
+/// client.connect().await?;
+/// ```
 #[derive(Default)]
 pub struct ClientBuilder {
     identity: Option<crate::protos::msp::SerializedIdentity>,
