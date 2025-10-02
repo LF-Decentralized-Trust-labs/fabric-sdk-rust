@@ -1,9 +1,9 @@
 pub mod client;
 pub mod error;
 pub mod identity;
-pub mod signer;
 #[allow(dead_code)]
 mod protos;
+pub mod signer;
 mod transaction;
 
 #[cfg(test)]

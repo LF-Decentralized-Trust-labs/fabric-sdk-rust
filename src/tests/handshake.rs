@@ -4,7 +4,6 @@ use tonic::transport::{Certificate, Channel, ClientTlsConfig};
 pub(crate) async fn handshake_orderer() -> Channel {
     let tls_path =
         env::var("ORDERER_TLS_CERT_PATH").expect("TLS_CERT_PATH environment variable not set");
-    println!("Path: {}", tls_path);
 
     let cert = Certificate::from_pem(fs::read(tls_path).expect("Couldn't read file"));
 

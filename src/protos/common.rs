@@ -337,17 +337,7 @@ pub struct MspPrincipal {
 }
 /// Nested message and enum types in `MSPPrincipal`.
 pub mod msp_principal {
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum Classification {
         /// Represents the one of the dedicated MSP roles, the
@@ -433,17 +423,7 @@ pub struct MspRole {
 }
 /// Nested message and enum types in `MSPRole`.
 pub mod msp_role {
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum MspRoleType {
         /// Represents an MSP Member
@@ -487,22 +467,15 @@ pub mod msp_role {
 /// MSPIdentityAnonymity can be used to enforce an identity to be anonymous or nominal.
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct MspIdentityAnonymity {
-    #[prost(enumeration = "msp_identity_anonymity::MspIdentityAnonymityType", tag = "1")]
+    #[prost(
+        enumeration = "msp_identity_anonymity::MspIdentityAnonymityType",
+        tag = "1"
+    )]
     pub anonymity_type: i32,
 }
 /// Nested message and enum types in `MSPIdentityAnonymity`.
 pub mod msp_identity_anonymity {
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum MspIdentityAnonymityType {
         /// Represents a nominal MSP Identity
@@ -552,17 +525,7 @@ pub struct Policy {
 }
 /// Nested message and enum types in `Policy`.
 pub mod policy {
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum PolicyType {
         /// Reserved to check for proper initialization
@@ -651,17 +614,7 @@ pub struct ImplicitMetaPolicy {
 }
 /// Nested message and enum types in `ImplicitMetaPolicy`.
 pub mod implicit_meta_policy {
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum Rule {
         /// Requires any of the sub-policies be satisfied, if no sub-policies exist, always returns true
@@ -787,10 +740,8 @@ pub struct ConfigUpdate {
     pub write_set: ::core::option::Option<ConfigGroup>,
     /// Data which is not to be reflected in the resulting Config, but is still needed for some other purpose.  For instance, rscc_seed_data
     #[prost(map = "string, bytes", tag = "5")]
-    pub isolated_data: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        ::prost::alloc::vec::Vec<u8>,
-    >,
+    pub isolated_data:
+        ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::vec::Vec<u8>>,
 }
 /// ConfigGroup is the hierarchical data structure for holding config
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -802,10 +753,7 @@ pub struct ConfigGroup {
     #[prost(map = "string, message", tag = "3")]
     pub values: ::std::collections::HashMap<::prost::alloc::string::String, ConfigValue>,
     #[prost(map = "string, message", tag = "4")]
-    pub policies: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        ConfigPolicy,
-    >,
+    pub policies: ::std::collections::HashMap<::prost::alloc::string::String, ConfigPolicy>,
     #[prost(string, tag = "5")]
     pub mod_policy: ::prost::alloc::string::String,
 }
@@ -1017,10 +965,7 @@ pub struct Consortium {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Capabilities {
     #[prost(map = "string, message", tag = "1")]
-    pub capabilities: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        Capability,
-    >,
+    pub capabilities: ::std::collections::HashMap<::prost::alloc::string::String, Capability>,
 }
 /// Capability is an empty message for the time being.  It is defined as a protobuf
 /// message rather than a constant, so that we may extend capabilities with other fields

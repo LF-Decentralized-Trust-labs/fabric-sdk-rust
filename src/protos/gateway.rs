@@ -15,9 +15,7 @@ pub struct EndorseRequest {
     /// If targeting the peers of specific organizations (e.g. for private data scenarios),
     /// the list of organizations' MSPIDs should be supplied here.
     #[prost(string, repeated, tag = "4")]
-    pub endorsing_organizations: ::prost::alloc::vec::Vec<
-        ::prost::alloc::string::String,
-    >,
+    pub endorsing_organizations: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// EndorseResponse returns the result of endorsing a transaction.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -178,9 +176,7 @@ pub struct ProposedTransaction {
     pub proposal: ::core::option::Option<super::protos::SignedProposal>,
     /// The list of endorsing organizations.
     #[prost(string, repeated, tag = "3")]
-    pub endorsing_organizations: ::prost::alloc::vec::Vec<
-        ::prost::alloc::string::String,
-    >,
+    pub endorsing_organizations: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// PreparedTransaction contains the details required for offline signing prior to submitting a transaction.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -199,10 +195,10 @@ pub mod gateway_client {
         dead_code,
         missing_docs,
         clippy::wildcard_imports,
-        clippy::let_unit_value,
+        clippy::let_unit_value
     )]
-    use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    use tonic::codegen::*;
     /// The Gateway API for evaluating and submitting transactions via the gateway.
     /// Transaction evaluation (query) requires the invocation of the Evaluate service
     /// Transaction submission (ledger updates) is a two step process invoking Endorse
@@ -236,14 +232,13 @@ pub mod gateway_client {
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
             T: tonic::codegen::Service<
-                http::Request<tonic::body::Body>,
-                Response = http::Response<
-                    <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                    http::Request<tonic::body::Body>,
+                    Response = http::Response<
+                        <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                    >,
                 >,
-            >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::Body>,
-            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::Body>>>::Error:
+                Into<StdError> + std::marker::Send + std::marker::Sync,
         {
             GatewayClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -288,22 +283,15 @@ pub mod gateway_client {
         pub async fn endorse(
             &mut self,
             request: impl tonic::IntoRequest<super::EndorseRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::EndorseResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+        ) -> std::result::Result<tonic::Response<super::EndorseResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(format!("Service was not ready: {}", e.into()))
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/gateway.Gateway/Endorse");
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new("gateway.Gateway", "Endorse"));
+            req.extensions_mut()
+                .insert(GrpcMethod::new("gateway.Gateway", "Endorse"));
             self.inner.unary(req, path, codec).await
         }
         /// The Submit service will process the prepared transaction returned from Endorse service
@@ -314,18 +302,14 @@ pub mod gateway_client {
             &mut self,
             request: impl tonic::IntoRequest<super::SubmitRequest>,
         ) -> std::result::Result<tonic::Response<super::SubmitResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(format!("Service was not ready: {}", e.into()))
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/gateway.Gateway/Submit");
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new("gateway.Gateway", "Submit"));
+            req.extensions_mut()
+                .insert(GrpcMethod::new("gateway.Gateway", "Submit"));
             self.inner.unary(req, path, codec).await
         }
         /// The CommitStatus service will indicate whether a prepared transaction previously submitted to
@@ -334,22 +318,13 @@ pub mod gateway_client {
         pub async fn commit_status(
             &mut self,
             request: impl tonic::IntoRequest<super::SignedCommitStatusRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::CommitStatusResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+        ) -> std::result::Result<tonic::Response<super::CommitStatusResponse>, tonic::Status>
+        {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(format!("Service was not ready: {}", e.into()))
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/gateway.Gateway/CommitStatus",
-            );
+            let path = http::uri::PathAndQuery::from_static("/gateway.Gateway/CommitStatus");
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("gateway.Gateway", "CommitStatus"));
@@ -361,22 +336,15 @@ pub mod gateway_client {
         pub async fn evaluate(
             &mut self,
             request: impl tonic::IntoRequest<super::EvaluateRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::EvaluateResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+        ) -> std::result::Result<tonic::Response<super::EvaluateResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(format!("Service was not ready: {}", e.into()))
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static("/gateway.Gateway/Evaluate");
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new("gateway.Gateway", "Evaluate"));
+            req.extensions_mut()
+                .insert(GrpcMethod::new("gateway.Gateway", "Evaluate"));
             self.inner.unary(req, path, codec).await
         }
         /// The ChaincodeEvents service supplies a stream of responses, each containing all the events emitted by the
@@ -390,18 +358,11 @@ pub mod gateway_client {
             tonic::Response<tonic::codec::Streaming<super::ChaincodeEventsResponse>>,
             tonic::Status,
         > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(format!("Service was not ready: {}", e.into()))
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/gateway.Gateway/ChaincodeEvents",
-            );
+            let path = http::uri::PathAndQuery::from_static("/gateway.Gateway/ChaincodeEvents");
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("gateway.Gateway", "ChaincodeEvents"));
@@ -416,7 +377,7 @@ pub mod gateway_server {
         dead_code,
         missing_docs,
         clippy::wildcard_imports,
-        clippy::let_unit_value,
+        clippy::let_unit_value
     )]
     use tonic::codegen::*;
     /// Generated trait containing gRPC methods that should be implemented for use with GatewayServer.
@@ -447,25 +408,18 @@ pub mod gateway_server {
         async fn commit_status(
             &self,
             request: tonic::Request<super::SignedCommitStatusRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::CommitStatusResponse>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<super::CommitStatusResponse>, tonic::Status>;
         /// The Evaluate service passes a proposed transaction to the gateway in order to invoke the
         /// transaction function and return the result to the client. No ledger updates are made.
         /// The gateway will select an appropriate peer to query based on block height and load.
         async fn evaluate(
             &self,
             request: tonic::Request<super::EvaluateRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::EvaluateResponse>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<super::EvaluateResponse>, tonic::Status>;
         /// Server streaming response type for the ChaincodeEvents method.
         type ChaincodeEventsStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<super::ChaincodeEventsResponse, tonic::Status>,
-            >
-            + std::marker::Send
+            > + std::marker::Send
             + 'static;
         /// The ChaincodeEvents service supplies a stream of responses, each containing all the events emitted by the
         /// requested chaincode for a specific block. The streamed responses are ordered by ascending block number. Responses
@@ -474,10 +428,7 @@ pub mod gateway_server {
         async fn chaincode_events(
             &self,
             request: tonic::Request<super::SignedChaincodeEventsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<Self::ChaincodeEventsStream>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<Self::ChaincodeEventsStream>, tonic::Status>;
     }
     /// The Gateway API for evaluating and submitting transactions via the gateway.
     /// Transaction evaluation (query) requires the invocation of the Evaluate service
@@ -506,10 +457,7 @@ pub mod gateway_server {
                 max_encoding_message_size: None,
             }
         }
-        pub fn with_interceptor<F>(
-            inner: T,
-            interceptor: F,
-        ) -> InterceptedService<Self, F>
+        pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
         where
             F: tonic::service::Interceptor,
         {
@@ -564,21 +512,15 @@ pub mod gateway_server {
                 "/gateway.Gateway/Endorse" => {
                     #[allow(non_camel_case_types)]
                     struct EndorseSvc<T: Gateway>(pub Arc<T>);
-                    impl<T: Gateway> tonic::server::UnaryService<super::EndorseRequest>
-                    for EndorseSvc<T> {
+                    impl<T: Gateway> tonic::server::UnaryService<super::EndorseRequest> for EndorseSvc<T> {
                         type Response = super::EndorseResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::EndorseRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as Gateway>::endorse(&inner, request).await
-                            };
+                            let fut = async move { <T as Gateway>::endorse(&inner, request).await };
                             Box::pin(fut)
                         }
                     }
@@ -607,21 +549,15 @@ pub mod gateway_server {
                 "/gateway.Gateway/Submit" => {
                     #[allow(non_camel_case_types)]
                     struct SubmitSvc<T: Gateway>(pub Arc<T>);
-                    impl<T: Gateway> tonic::server::UnaryService<super::SubmitRequest>
-                    for SubmitSvc<T> {
+                    impl<T: Gateway> tonic::server::UnaryService<super::SubmitRequest> for SubmitSvc<T> {
                         type Response = super::SubmitResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::SubmitRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as Gateway>::submit(&inner, request).await
-                            };
+                            let fut = async move { <T as Gateway>::submit(&inner, request).await };
                             Box::pin(fut)
                         }
                     }
@@ -650,23 +586,18 @@ pub mod gateway_server {
                 "/gateway.Gateway/CommitStatus" => {
                     #[allow(non_camel_case_types)]
                     struct CommitStatusSvc<T: Gateway>(pub Arc<T>);
-                    impl<
-                        T: Gateway,
-                    > tonic::server::UnaryService<super::SignedCommitStatusRequest>
-                    for CommitStatusSvc<T> {
+                    impl<T: Gateway> tonic::server::UnaryService<super::SignedCommitStatusRequest>
+                        for CommitStatusSvc<T>
+                    {
                         type Response = super::CommitStatusResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::SignedCommitStatusRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as Gateway>::commit_status(&inner, request).await
-                            };
+                            let fut =
+                                async move { <T as Gateway>::commit_status(&inner, request).await };
                             Box::pin(fut)
                         }
                     }
@@ -695,21 +626,16 @@ pub mod gateway_server {
                 "/gateway.Gateway/Evaluate" => {
                     #[allow(non_camel_case_types)]
                     struct EvaluateSvc<T: Gateway>(pub Arc<T>);
-                    impl<T: Gateway> tonic::server::UnaryService<super::EvaluateRequest>
-                    for EvaluateSvc<T> {
+                    impl<T: Gateway> tonic::server::UnaryService<super::EvaluateRequest> for EvaluateSvc<T> {
                         type Response = super::EvaluateResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::EvaluateRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as Gateway>::evaluate(&inner, request).await
-                            };
+                            let fut =
+                                async move { <T as Gateway>::evaluate(&inner, request).await };
                             Box::pin(fut)
                         }
                     }
@@ -738,17 +664,14 @@ pub mod gateway_server {
                 "/gateway.Gateway/ChaincodeEvents" => {
                     #[allow(non_camel_case_types)]
                     struct ChaincodeEventsSvc<T: Gateway>(pub Arc<T>);
-                    impl<
-                        T: Gateway,
-                    > tonic::server::ServerStreamingService<
-                        super::SignedChaincodeEventsRequest,
-                    > for ChaincodeEventsSvc<T> {
+                    impl<T: Gateway>
+                        tonic::server::ServerStreamingService<super::SignedChaincodeEventsRequest>
+                        for ChaincodeEventsSvc<T>
+                    {
                         type Response = super::ChaincodeEventsResponse;
                         type ResponseStream = T::ChaincodeEventsStream;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::ResponseStream>,
-                            tonic::Status,
-                        >;
+                        type Future =
+                            BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::SignedChaincodeEventsRequest>,
@@ -782,25 +705,19 @@ pub mod gateway_server {
                     };
                     Box::pin(fut)
                 }
-                _ => {
-                    Box::pin(async move {
-                        let mut response = http::Response::new(
-                            tonic::body::Body::default(),
-                        );
-                        let headers = response.headers_mut();
-                        headers
-                            .insert(
-                                tonic::Status::GRPC_STATUS,
-                                (tonic::Code::Unimplemented as i32).into(),
-                            );
-                        headers
-                            .insert(
-                                http::header::CONTENT_TYPE,
-                                tonic::metadata::GRPC_CONTENT_TYPE,
-                            );
-                        Ok(response)
-                    })
-                }
+                _ => Box::pin(async move {
+                    let mut response = http::Response::new(tonic::body::Body::default());
+                    let headers = response.headers_mut();
+                    headers.insert(
+                        tonic::Status::GRPC_STATUS,
+                        (tonic::Code::Unimplemented as i32).into(),
+                    );
+                    headers.insert(
+                        http::header::CONTENT_TYPE,
+                        tonic::metadata::GRPC_CONTENT_TYPE,
+                    );
+                    Ok(response)
+                }),
             }
         }
     }

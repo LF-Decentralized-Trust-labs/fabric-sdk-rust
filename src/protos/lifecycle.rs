@@ -78,9 +78,8 @@ pub struct QueryInstalledChaincodesArgs {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryInstalledChaincodesResult {
     #[prost(message, repeated, tag = "1")]
-    pub installed_chaincodes: ::prost::alloc::vec::Vec<
-        query_installed_chaincodes_result::InstalledChaincode,
-    >,
+    pub installed_chaincodes:
+        ::prost::alloc::vec::Vec<query_installed_chaincodes_result::InstalledChaincode>,
 }
 /// Nested message and enum types in `QueryInstalledChaincodesResult`.
 pub mod query_installed_chaincodes_result {
@@ -91,10 +90,7 @@ pub mod query_installed_chaincodes_result {
         #[prost(string, tag = "2")]
         pub label: ::prost::alloc::string::String,
         #[prost(map = "string, message", tag = "3")]
-        pub references: ::std::collections::HashMap<
-            ::prost::alloc::string::String,
-            References,
-        >,
+        pub references: ::std::collections::HashMap<::prost::alloc::string::String, References>,
     }
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct References {
@@ -290,9 +286,7 @@ pub mod query_approved_chaincode_definitions_result {
         #[prost(bytes = "vec", tag = "6")]
         pub validation_parameter: ::prost::alloc::vec::Vec<u8>,
         #[prost(message, optional, tag = "7")]
-        pub collections: ::core::option::Option<
-            super::super::protos::CollectionConfigPackage,
-        >,
+        pub collections: ::core::option::Option<super::super::protos::CollectionConfigPackage>,
         #[prost(bool, tag = "8")]
         pub init_required: bool,
         #[prost(message, optional, tag = "9")]
@@ -336,9 +330,8 @@ pub struct QueryChaincodeDefinitionsArgs {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryChaincodeDefinitionsResult {
     #[prost(message, repeated, tag = "1")]
-    pub chaincode_definitions: ::prost::alloc::vec::Vec<
-        query_chaincode_definitions_result::ChaincodeDefinition,
-    >,
+    pub chaincode_definitions:
+        ::prost::alloc::vec::Vec<query_chaincode_definitions_result::ChaincodeDefinition>,
 }
 /// Nested message and enum types in `QueryChaincodeDefinitionsResult`.
 pub mod query_chaincode_definitions_result {
@@ -357,9 +350,7 @@ pub mod query_chaincode_definitions_result {
         #[prost(bytes = "vec", tag = "6")]
         pub validation_parameter: ::prost::alloc::vec::Vec<u8>,
         #[prost(message, optional, tag = "7")]
-        pub collections: ::core::option::Option<
-            super::super::protos::CollectionConfigPackage,
-        >,
+        pub collections: ::core::option::Option<super::super::protos::CollectionConfigPackage>,
         #[prost(bool, tag = "8")]
         pub init_required: bool,
     }

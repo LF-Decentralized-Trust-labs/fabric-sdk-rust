@@ -25,23 +25,66 @@ impl Client {
         );
         Ok(())
     }
-
-    pub fn get_transaction_builder(&self) -> TransaktionBuilder{
-        TransaktionBuilder{
+    /// A builder for creating `PreparedTransaction` instances, from which you can submit the transaction.
+    /// build() only prepares the transaction. It will not send anything to the network.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    ///  let tx_builder = client
+    ///    .get_transaction_builder()
+    ///    .with_channel_name("mychannel")?
+    ///    .with_chaincode_id("basic")?
+    ///    .with_function_name("CreateAsset")?
+    ///    .with_function_args(["assetCustom", "orange", "10", "Frank", "600"])?
+    ///    .build();
+    ///  match tx_builder {
+    ///    Ok(prepared_transaction) => match prepared_transaction.submit().await {
+    ///        Ok(result) => {
+    ///            println!("{}", String::from_utf8_lossy(result.as_slice()));
+    ///        }
+    ///        Err(err) => println!("{}", err),
+    ///    },
+    ///    Err(err) => println!("{}", err),
+    ///  }
+    /// ```
+    pub fn get_transaction_builder(&self) -> TransaktionBuilder {
+        TransaktionBuilder {
             identity: self.identity.clone(),
             channel: self.tonic_connection.channel.clone().unwrap(),
             signer: self.signer.clone(),
             channel_name: None,
             chaincode_id: None,
+            contract_id: None,
             function_name: None,
-            function_args: vec![]
+            function_args: vec![],
         }
     }
 }
 
+/// The `ClientBuilder` struct is used to configure and build a `Client` instance. It provides methods to set various parameters required for creating a client, such as identity, signer, TLS configuration, scheme, and authority.
+///
+/// # Examples
+///
+/// ```rust
+///  use fabric_sdk_rust::{client::ClientBuilder, identity::IdentityBuilder, signer::Signer};
+///
+///  let identity = IdentityBuilder::from_pem(std::fs::read(msp_signcert_path)?.as_slice())
+///    .with_msp("Org1MSP")?
+///    .build()?;
+///  let mut client = ClientBuilder::new()
+///    .with_identity(identity)?
+///    .with_tls(tlsca_bytes)?
+///    .with_sheme("https")?
+///    .with_authority("localhost:7051")?
+///    .with_signer(Signer::new(msp_key_bytes))?
+///    .build()?;
+///  client.connect().await?;
+/// ```
 #[derive(Default)]
 pub struct ClientBuilder {
     identity: Option<crate::protos::msp::SerializedIdentity>,
+    tls: Option<Vec<u8>>,
     signer: Option<Signer>,
     scheme: Option<String>,
     authority: Option<String>,
@@ -52,16 +95,36 @@ impl ClientBuilder {
         ClientBuilder::default()
     }
 
-    pub fn with_identity(mut self, identity: crate::protos::msp::SerializedIdentity) -> Result<ClientBuilder, BuilderError> {
+    /// Identity from the IdentityBuilder
+    /// # Example
+    /// ```rust
+    ///use fabric_sdk_rust::{client::ClientBuilder, identity::IdentityBuilder, signer::Signer};
+    ///
+    ///let identity = IdentityBuilder::from_pem(pem_bytes)
+    ///    .with_msp("Org1MSP")?
+    ///    .build()?;
+    ///
+    ///let mut client = ClientBuilder::new()
+    ///    .with_identity(identity)?;
+    pub fn with_identity(
+        mut self,
+        identity: crate::protos::msp::SerializedIdentity,
+    ) -> Result<ClientBuilder, BuilderError> {
         self.identity = Some(identity);
         Ok(self)
     }
-
+    /// Signer to sign the transactions
+    /// # Example
+    /// ```rust
+    ///  let mut client = ClientBuilder::new()
+    ///    .with_signer(Signer::new(msp_key_bytes))?
+    /// ```
     pub fn with_signer(mut self, signer: Signer) -> Result<ClientBuilder, BuilderError> {
         self.signer = Some(signer);
         Ok(self)
     }
 
+    /// Chooses which scheme is being used. Default value is `https`
     pub fn with_sheme(mut self, scheme: impl Into<String>) -> Result<ClientBuilder, BuilderError> {
         let scheme = scheme.into().trim().to_string();
         if scheme.is_empty() {
@@ -72,7 +135,13 @@ impl ClientBuilder {
         self.scheme = Some(scheme);
         Ok(self)
     }
-
+    /// Tls for the grpc connection to the node.
+    /// The needed pem from the test network can be found here: `organizations/peerOrganizations/org1.example.com/tlsca/tlsca.org1.example.com-cert.pem`
+    pub fn with_tls(mut self, bytes: impl Into<Vec<u8>>) -> Result<ClientBuilder, BuilderError> {
+        self.tls = Some(bytes.into());
+        Ok(self)
+    }
+    /// Authority for the grpc connection to the node. Default is `localhost:7051` which corresponds to the test network
     pub fn with_authority(
         mut self,
         authority: impl Into<String>,
@@ -86,7 +155,7 @@ impl ClientBuilder {
         self.authority = Some(authority);
         Ok(self)
     }
-
+    /// Collects and validates the values from the builder to build the client. Building does not start the connection to the node.
     pub fn build(self) -> Result<Client, BuilderError> {
         let identity = match self.identity {
             Some(identity) => identity,
@@ -96,9 +165,13 @@ impl ClientBuilder {
             Some(signer) => signer,
             None => return Err(BuilderError::MissingParameter("signer".into())),
         };
+        let tls = match self.tls {
+            Some(tls) => tls,
+            None => return Err(BuilderError::MissingParameter("tls".into())),
+        };
         //TODO Allow custom tls config
-        let tls_config =
-            tonic::transport::ClientTlsConfig::new().ca_certificate(tonic::transport::Certificate::from_pem(identity.id_bytes.as_slice()));
+        let tls_config = tonic::transport::ClientTlsConfig::new()
+            .ca_certificate(tonic::transport::Certificate::from_pem(tls.as_slice()));
         let scheme = match self.scheme {
             Some(scheme) => scheme,
             None => "https".to_string(),
