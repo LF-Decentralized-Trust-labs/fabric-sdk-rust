@@ -1,79 +1,107 @@
 use prost::Message;
 
-use crate::{error::BuilderError, signer::Signer};
-
+use crate::{
+    error::BuilderError,
+    protos::{
+        common::Payload,
+        gateway::{ChaincodeEventsRequest, ChaincodeEventsResponse},
+        protos::{
+            ChaincodeAction, ChaincodeActionPayload, ChaincodeCall, ChaincodeEvent, LifecycleEvent,
+            ProcessedTransaction, ProposalResponsePayload, Response, Transaction,
+            TransactionAction,
+        },
+    },
+    signer::Signer,
+};
 
 pub(crate) const NONCE_LENGTH: usize = 24;
 
-pub struct PreparedTransaction{
+pub struct PreparedTransaction {
     pub(crate) identity: crate::protos::msp::SerializedIdentity,
     pub(crate) signer: Signer,
     pub(crate) channel_name: String,
     pub(crate) channel: tonic::transport::Channel,
-    endorse_request: crate::protos::gateway::EndorseRequest
+    endorse_request: crate::protos::gateway::EndorseRequest,
 }
 
 impl PreparedTransaction {
-    pub async fn submit(&self) -> Result<tonic::Response<crate::protos::gateway::SubmitResponse>,String> {
-         let mut gateway_client = crate::protos::gateway::gateway_client::GatewayClient::new(self.channel.clone());
-         let response = gateway_client.endorse(self.endorse_request.clone()).await;
-         match response {
-             Ok(response) => {
-                 match response.into_inner().prepared_transaction {
-                     Some(mut prepared_transaction) => {
-                         //Generate random bytes for transaction id and signature header
-                         let mut nonce = [0u8; NONCE_LENGTH];
-                         openssl::rand::rand_bytes(&mut nonce)
-                             .expect("Unable to generate random bytes");
+    pub async fn submit(&self) -> Result<Vec<u8>, String> {
+        let mut gateway_client =
+            crate::protos::gateway::gateway_client::GatewayClient::new(self.channel.clone());
+        //First transaction will be endorsed to the network
+        let response = gateway_client.endorse(self.endorse_request.clone()).await;
+        match response {
+            Ok(response) => {
+                match response.into_inner().prepared_transaction {
+                    Some(mut envelope) => {
+                        //TODO CHECK SIGNATURES
 
-                         prepared_transaction.signature = sign_message(
-                             prepared_transaction.payload.as_slice(),
-                             self.signer.pkey.as_slice(),
-                         );
+                        let mut result = vec![];
+                        //TODO Error handling
 
-                         //Create transaction id
-                         let transaction_id = create_transaction_id(
-                             &nonce,
-                             self.identity.encode_to_vec().as_slice(),
-                         );
-                         let submit_request = crate::protos::gateway::SubmitRequest {
-                             transaction_id: transaction_id.clone(),
-                             channel_id: self.channel_name.clone(),
-                             prepared_transaction: Some(prepared_transaction),
-                         };
-                         match gateway_client.submit(submit_request).await {
-                             Ok(response) => {
-                                 return Ok(response);
-                             }
-                             Err(err) => {
-                                 return Err(err.message().to_string());
-                             }
-                         }
-                     }
-                     None => {
-                         return Err("None".into());
-                     }
-                 }
-             }
-             Err(err) => {
-                 return Err(err.message().to_string());
-             }
-         }
+                        if let Ok(payload) = Payload::decode(envelope.payload.as_slice())
+                            && let Ok(transaction) =
+                                crate::protos::protos::Transaction::decode(payload.data.as_slice())
+                        {
+                            for action in transaction.actions {
+                                if let Ok(action) =
+                                    ChaincodeActionPayload::decode(action.payload.as_slice())
+                                    && let Some(action) = action.action
+                                    && let Ok(payload) = ProposalResponsePayload::decode(
+                                        action.proposal_response_payload.as_slice(),
+                                    )
+                                    && let Ok(action) =
+                                        ChaincodeAction::decode(payload.extension.as_slice())
+                                    && let Some(response) = action.response
+                                {
+                                    result = response.payload;
+                                }
+                            }
+                        }
+                        //Generate random bytes for transaction id and signature header
+                        let mut nonce = [0u8; NONCE_LENGTH];
+                        openssl::rand::rand_bytes(&mut nonce)
+                            .expect("Unable to generate random bytes");
+
+                        envelope.signature =
+                            sign_message(envelope.payload.as_slice(), self.signer.pkey.as_slice());
+
+                        //Create transaction id
+                        let transaction_id =
+                            create_transaction_id(&nonce, self.identity.encode_to_vec().as_slice());
+                        let submit_request = crate::protos::gateway::SubmitRequest {
+                            transaction_id: transaction_id.clone(),
+                            channel_id: self.channel_name.clone(),
+                            prepared_transaction: Some(envelope),
+                        };
+                        match gateway_client.submit(submit_request).await {
+                            Ok(_) => Ok(result),
+                            Err(err) => Err(err.message().to_string()),
+                        }
+                    }
+                    None => Err("None".into()),
+                }
+            }
+            Err(err) => Err(err.message().to_string()),
+        }
     }
 }
 
-pub struct TransaktionBuilder{
+pub struct TransaktionBuilder {
     pub(crate) identity: crate::protos::msp::SerializedIdentity,
     pub(crate) channel: tonic::transport::Channel,
     pub(crate) signer: Signer,
     pub(crate) channel_name: Option<String>,
     pub(crate) chaincode_id: Option<String>,
     pub(crate) function_name: Option<String>,
-    pub(crate) function_args: Vec<String>
+    pub(crate) function_args: Vec<String>,
 }
 
-impl TransaktionBuilder{
-    pub fn with_channel_name(mut self, name: impl Into<String>) -> Result<TransaktionBuilder,BuilderError>{
+impl TransaktionBuilder {
+    pub fn with_channel_name(
+        mut self,
+        name: impl Into<String>,
+    ) -> Result<TransaktionBuilder, BuilderError> {
         let name = name.into().trim().to_string();
         if name.is_empty() {
             return Err(BuilderError::InvalidParameter(
@@ -84,18 +112,22 @@ impl TransaktionBuilder{
         Ok(self)
     }
 
-    pub fn with_chaincode_id(mut self, id: impl Into<String>) -> Result<TransaktionBuilder,BuilderError>{
+    pub fn with_chaincode_id(
+        mut self,
+        id: impl Into<String>,
+    ) -> Result<TransaktionBuilder, BuilderError> {
         let id = id.into().trim().to_string();
         if id.is_empty() {
-            return Err(BuilderError::InvalidParameter(
-                "id cannot be empty".into(),
-            ));
+            return Err(BuilderError::InvalidParameter("id cannot be empty".into()));
         }
         self.chaincode_id = Some(id);
         Ok(self)
     }
 
-    pub fn with_function_name(mut self, name: impl Into<String>) -> Result<TransaktionBuilder,BuilderError>{
+    pub fn with_function_name(
+        mut self,
+        name: impl Into<String>,
+    ) -> Result<TransaktionBuilder, BuilderError> {
         let name = name.into().trim().to_string();
         if name.is_empty() {
             return Err(BuilderError::InvalidParameter(
@@ -106,12 +138,15 @@ impl TransaktionBuilder{
         Ok(self)
     }
 
-    pub fn with_function_args(mut self, args: Vec<String>) -> Result<TransaktionBuilder,BuilderError>{
+    pub fn with_function_args(
+        mut self,
+        args: Vec<String>,
+    ) -> Result<TransaktionBuilder, BuilderError> {
         self.function_args = args;
         Ok(self)
     }
 
-    pub fn build(self) -> Result<PreparedTransaction,BuilderError>{
+    pub fn build(self) -> Result<PreparedTransaction, BuilderError> {
         let channel_name = match self.channel_name {
             Some(channel_name) => channel_name,
             None => return Err(BuilderError::MissingParameter("channel_name".into())),
@@ -138,8 +173,11 @@ impl TransaktionBuilder{
             nonce: nonce.to_vec(),
         };
 
-        let mut hasher = openssl::hash::Hasher::new(openssl::hash::MessageDigest::sha256()).unwrap();
-        hasher.update(identity.id_bytes.encode_to_vec().as_slice()).unwrap();
+        let mut hasher =
+            openssl::hash::Hasher::new(openssl::hash::MessageDigest::sha256()).unwrap();
+        hasher
+            .update(identity.id_bytes.encode_to_vec().as_slice())
+            .unwrap();
         let tls_cert_hash = hasher.finish().expect("Couldn't finalize hash").to_vec();
 
         let chaincode_id = crate::protos::protos::ChaincodeId {

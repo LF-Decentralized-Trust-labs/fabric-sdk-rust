@@ -17,7 +17,6 @@ impl std::fmt::Display for BuilderError {
     }
 }
 
-
 #[derive(Debug)]
 pub enum ContractError {
     MethodCall(String),
@@ -29,8 +28,8 @@ impl std::fmt::Display for ContractError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ContractError::MethodCall(err) => {
-                 write!(f, "Method call error: {}", err)
-            },
+                write!(f, "Method call error: {}", err)
+            }
         }
     }
 }

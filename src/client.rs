@@ -26,15 +26,15 @@ impl Client {
         Ok(())
     }
 
-    pub fn get_transaction_builder(&self) -> TransaktionBuilder{
-        TransaktionBuilder{
+    pub fn get_transaction_builder(&self) -> TransaktionBuilder {
+        TransaktionBuilder {
             identity: self.identity.clone(),
             channel: self.tonic_connection.channel.clone().unwrap(),
             signer: self.signer.clone(),
             channel_name: None,
             chaincode_id: None,
             function_name: None,
-            function_args: vec![]
+            function_args: vec![],
         }
     }
 }
@@ -42,7 +42,7 @@ impl Client {
 #[derive(Default)]
 pub struct ClientBuilder {
     identity: Option<crate::protos::msp::SerializedIdentity>,
-    tls : Option<Vec<u8>>,
+    tls: Option<Vec<u8>>,
     signer: Option<Signer>,
     scheme: Option<String>,
     authority: Option<String>,
@@ -53,7 +53,10 @@ impl ClientBuilder {
         ClientBuilder::default()
     }
 
-    pub fn with_identity(mut self, identity: crate::protos::msp::SerializedIdentity) -> Result<ClientBuilder, BuilderError> {
+    pub fn with_identity(
+        mut self,
+        identity: crate::protos::msp::SerializedIdentity,
+    ) -> Result<ClientBuilder, BuilderError> {
         self.identity = Some(identity);
         Ok(self)
     }
@@ -107,8 +110,8 @@ impl ClientBuilder {
             None => return Err(BuilderError::MissingParameter("tls".into())),
         };
         //TODO Allow custom tls config
-        let tls_config =
-            tonic::transport::ClientTlsConfig::new().ca_certificate(tonic::transport::Certificate::from_pem(tls.as_slice()));
+        let tls_config = tonic::transport::ClientTlsConfig::new()
+            .ca_certificate(tonic::transport::Certificate::from_pem(tls.as_slice()));
         let scheme = match self.scheme {
             Some(scheme) => scheme,
             None => "https".to_string(),

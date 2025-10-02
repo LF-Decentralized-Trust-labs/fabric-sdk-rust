@@ -1,5 +1,4 @@
-
 #[derive(Clone)]
-pub struct Signer{
-    pub pkey: Vec<u8>
+pub struct Signer {
+    pub pkey: Vec<u8>,
 }
