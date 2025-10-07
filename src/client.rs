@@ -125,7 +125,7 @@ impl ClientBuilder {
     }
 
     /// Chooses which scheme is being used. Default value is `https`
-    pub fn with_sheme(mut self, scheme: impl Into<String>) -> Result<ClientBuilder, BuilderError> {
+    pub fn with_scheme(mut self, scheme: impl Into<String>) -> Result<ClientBuilder, BuilderError> {
         let scheme = scheme.into().trim().to_string();
         if scheme.is_empty() {
             return Err(BuilderError::InvalidParameter(
