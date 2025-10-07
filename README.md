@@ -29,7 +29,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut client = ClientBuilder::new()
         .with_identity(identity)?
         .with_tls(tlsca_bytes)?
-        .with_sheme("https")?
+        .with_scheme("https")?
         .with_authority("localhost:7051")?
         .with_signer(Signer::new(msp_key_bytes))?
         .build()?;
