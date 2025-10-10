@@ -1,46 +1,6 @@
 #[cfg(test)]
 mod transaction_test {
-    use crate::protos::common::{ChannelHeader, Header, HeaderType, SignatureHeader};
-    use crate::protos::gateway::gateway_client::GatewayClient;
-    use crate::protos::gateway::{EndorseRequest, ProposedTransaction, SubmitRequest};
-    use crate::protos::protos::*;
-    use openssl::ec::EcKey;
-    use openssl::hash::{Hasher, MessageDigest};
-    use openssl::sha::Sha256;
-    use p256::pkcs8::der::Encode;
-    use prost::Message;
-    use std::{env, fs, vec};
-    use tonic::transport::Certificate;
-
-    fn create_transaction_id(nonce: &[u8], creator: &[u8]) -> String {
-        let salted_creator = [nonce, creator].concat();
-        let hash = openssl::sha::sha256(salted_creator.as_slice());
-        hex::encode(hash)
-    }
-
-    fn sign_message(message: &[u8], pem_bytes: &[u8]) -> Vec<u8> {
-        let ec_key = EcKey::private_key_from_pem(pem_bytes).unwrap();
-
-        let mut hasher = Sha256::new();
-        hasher.update(message);
-        let hash = hasher.finish();
-
-        let signature = openssl::ecdsa::EcdsaSig::sign(hash.as_slice(), &ec_key).unwrap();
-
-        //Hyperledger uses a normalized s signature. Openssl does not support it so we use ecdsa implementation from RustCrypto https://github.com/RustCrypto/signatures/tree/master/ecdsa
-        // which is not verified to be secure
-        let signature: ecdsa::Signature<p256::NistP256> =
-            ecdsa::Signature::from_der(signature.to_der().unwrap().as_slice()).unwrap();
-
-        let mut v = vec![];
-        if let Some(signature) = signature.normalize_s() {
-            signature.to_der().encode_to_vec(&mut v).unwrap();
-            v
-        } else {
-            signature.to_der().encode_to_vec(&mut v).unwrap();
-            v
-        }
-    }
+    use std::{env, fs};
 
     #[test]
     fn test_transaction() {
@@ -89,7 +49,7 @@ mod transaction_test {
                         .unwrap(),
                     )
                     .unwrap()
-                    .with_sheme("https")
+                    .with_scheme("https")
                     .unwrap()
                     .with_authority("localhost:7051")
                     .unwrap()
