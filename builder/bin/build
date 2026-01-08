@@ -1,0 +1,43 @@
+#!/bin/bash
+
+set -euo pipefail
+
+CHAINCODE_SOURCE_DIR=$1
+CHAINCODE_METADATA_DIR=$2
+BUILD_OUTPUT_DIR=$3
+
+>&2 echo "Build"
+
+TYPE=$(tr -d '\n' < "$CHAINCODE_METADATA_DIR/metadata.json" | awk -F':' '{ for (i = 1; i < NF; i++){ if ($i~/type/) { print $(i+1); break }}}'| cut -d\" -f2)
+LABEL=$(tr -d '\n' < "$CHAINCODE_METADATA_DIR/metadata.json" | awk -F':' '{ for (i = 1; i < NF; i++){ if ($i~/label/) { print $(i+1); break }}}'| cut -d\" -f2)
+
+if [ "$TYPE" = "rust" ]; then
+    >&2 echo "Build: Rust"
+    #mkdir "$BUILD_OUTPUT_DIR/build"
+    #cp "$CHAINCODE_SOURCE_DIR/*" "$BUILD_OUTPUT_DIR/build/"
+    #cd "$BUILD_OUTPUT_DIR/build"
+    #RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --target x86_64-unknown-linux-gnu
+    #mv "target/release/$BINARY_NAME" ../chaincode
+    #cd ..
+    #rm -r build
+    cp -r "$CHAINCODE_SOURCE_DIR" "$BUILD_OUTPUT_DIR/"
+    cd "$BUILD_OUTPUT_DIR"
+
+    echo "FROM rust:1.91
+    RUN apt update && apt install protobuf-compiler -y
+    WORKDIR /tmp
+    COPY . .
+    RUN RUSTFLAGS="-C target-feature=+crt-static" cargo build --target x86_64-unknown-linux-gnu --release
+    RUN cp target/x86_64-unknown-linux-gnu/release/chaincode /chaincode
+    RUN rm -r /tmp
+    CMD ["/chaincode"]" > Dockerfile
+
+    /var/run/docker build -t ${LABEL}:latest .
+fi
+
+if [ "$TYPE" = "binary" ]; then
+    >&2 echo "Build: binary"
+    cp "$CHAINCODE_SOURCE_DIR/chaincode" "$BUILD_OUTPUT_DIR/chaincode"
+fi
+
+exit 0

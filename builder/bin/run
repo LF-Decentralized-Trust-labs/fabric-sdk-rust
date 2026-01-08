@@ -1,0 +1,31 @@
+#!/bin/bash
+
+BUILD_OUTPUT_DIR=$1
+RUN_METADATA_DIR=$2
+
+>&2 echo "Run"
+
+export METADATA=$(cat "$RUN_METADATA_DIR/chaincode.json")
+
+
+#ID=$(tr -d '\n' < "$RUN_METADATA_DIR/chaincode.json" | awk -F':' '{ for (i = 1; i < NF; i++){ if ($i~/chaincode_id/) { print $(i+1); break }}}'| cut -d\" -f2)
+#PEER_URL=$(tr -d '\n' < "$RUN_METADATA_DIR/chaincode.json" | awk -F':' '{ for (i = 1; i < NF; i++){ if ($i~/peer_address/) { print $(i+1); break }}}'| cut -d\" -f2)
+#PEER="${PEER_URL%:*}"
+
+#cat > Dockerfile << 'EOF'
+#FROM hyperledger/fabric-chaincode-go:latest
+#COPY --from=0 "$BUILD_OUTPUT_DIR/chaincode" "/chaincode"
+#WORKDIR "/"
+#CMD ["/chaincode"]
+#EOF
+
+#>&2 docker build \
+#  -t "$PEER-$ID" \
+#  -f Dockerfile .
+
+#>&2 docker run \
+#  -e METADATA="$METADATA" \
+#  -d \
+#  "$PEER-$ID"
+
+>&2 exec "$BUILD_OUTPUT_DIR/chaincode"

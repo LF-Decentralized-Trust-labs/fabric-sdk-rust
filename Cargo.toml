@@ -1,26 +1,47 @@
 [package]
-name = "fabric-sdk-rust"
-version = "0.1.0"
+name = "fabric-sdk"
+authors = ["Arne Fuchs <arnefuchs@pm.me>"]
+version = "0.2.0"
 edition = "2024"
 build = "build.rs"
+license = "Apache-2.0"
+license-file = "LICENSE"
+description = """
+Interact and program chaincode for the Hyperledger Fabric blockchain network
+"""
+repository="https://github.com/LF-Decentralized-Trust-labs/fabric-sdk-rust"
+keywords = ["fabric", "blockchain", "hyperledger", "smart contract", "web3"]
+readme="README.md"
 
 [dependencies]
-tonic = { version = "0.13.1", features = ["tls-ring"] }
-prost = "0.13.1"
-prost-types = "0.13.1"
-rustls = { version = "0.23.23", features = ["ring"] }
-openssl = "0.10.73"
+#Chaincode
+tokio = { version = "1.28.0", features = ["full"] }
+futures-util = "0.3.31"
+serde = {version = "1.0.219", features = ["derive"]}
+serde_json = "1.0.143"
+chaincode_derives = { version = "0.1.0", path = "chaincode-derives" }
+
+#Client
+#rustls = { version = "0.23.23", features = ["ring"] } # Makes problems when compiling static
+tonic = { version = "0.14.2", features = ["tls-aws-lc"] }
+tonic-prost = "0.14.2"
+prost = "0.14.1"
+prost-types = "0.14.1"
+openssl = { version = "0.10.75", features = ["vendored"] }
 hex = "0.4.3"
 ecdsa = {version="0.16.9", features=["der","arithmetic"]}
-lazy_static = "1.4.0"
 p256 = "0.13.2"
+futures-channel = "0.3.31"
+
+[build]
+rustflags = ["-C", "target-feature=+crt-static"]
+target = "x86_64-unknown-linux-gnu"
 
 [dev-dependencies]
 dotenv = "0.15.0"
-tokio = { version = "1.28.0", features = ["full"] }
 
 [build-dependencies]
-tonic-build = { version = "0.13.1", default-features = false, features=["prost"] }
+tonic-prost-build = { version = "0.14.2", default-features = false}
 
 [lib]
 doctest = false

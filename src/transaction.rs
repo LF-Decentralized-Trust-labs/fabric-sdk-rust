@@ -2,88 +2,29 @@ use prost::Message;
 
 use crate::{
     error::BuilderError,
-    protos::{
-        common::Payload,
-        protos::{ChaincodeAction, ChaincodeActionPayload, ProposalResponsePayload},
+    fabric::{
+        common::{ChannelHeader, Header, HeaderType, SignatureHeader},
+        gateway::EndorseRequest,
+        msp::SerializedIdentity,
+        protos::{
+            ChaincodeHeaderExtension, ChaincodeId, ChaincodeInput, ChaincodeInvocationSpec,
+            ChaincodeMessage, ChaincodeProposalPayload, ChaincodeSpec, Proposal, SignedProposal,
+        },
     },
     signer::Signer,
 };
 
 pub(crate) const NONCE_LENGTH: usize = 24;
 
+/// A prepared transaction ready to be submitted to the network.
+/// This struct is being used by the `submit_transaction()` from the client struct.
 pub struct PreparedTransaction {
-    pub(crate) identity: crate::protos::msp::SerializedIdentity,
-    pub(crate) signer: Signer,
     pub(crate) channel_name: String,
-    pub(crate) channel: tonic::transport::Channel,
-    endorse_request: crate::protos::gateway::EndorseRequest,
-}
-
-impl PreparedTransaction {
-    pub async fn submit(&self) -> Result<Vec<u8>, String> {
-        let mut gateway_client =
-            crate::protos::gateway::gateway_client::GatewayClient::new(self.channel.clone());
-        //First transaction will be endorsed to the network
-        let response = gateway_client.endorse(self.endorse_request.clone()).await;
-        match response {
-            Ok(response) => {
-                match response.into_inner().prepared_transaction {
-                    Some(mut envelope) => {
-                        //TODO CHECK SIGNATURES
-
-                        let mut result = vec![];
-                        //TODO Error handling
-
-                        if let Ok(payload) = Payload::decode(envelope.payload.as_slice())
-                            && let Ok(transaction) =
-                                crate::protos::protos::Transaction::decode(payload.data.as_slice())
-                        {
-                            for action in transaction.actions {
-                                if let Ok(action) =
-                                    ChaincodeActionPayload::decode(action.payload.as_slice())
-                                    && let Some(action) = action.action
-                                    && let Ok(payload) = ProposalResponsePayload::decode(
-                                        action.proposal_response_payload.as_slice(),
-                                    )
-                                    && let Ok(action) =
-                                        ChaincodeAction::decode(payload.extension.as_slice())
-                                    && let Some(response) = action.response
-                                {
-                                    result = response.payload;
-                                }
-                            }
-                        }
-                        //Generate random bytes for transaction id and signature header
-                        let mut nonce = [0u8; NONCE_LENGTH];
-                        openssl::rand::rand_bytes(&mut nonce)
-                            .expect("Unable to generate random bytes");
-
-                        envelope.signature =
-                            sign_message(envelope.payload.as_slice(), self.signer.pkey.as_slice());
-
-                        //Create transaction id
-                        let transaction_id =
-                            create_transaction_id(&nonce, self.identity.encode_to_vec().as_slice());
-                        let submit_request = crate::protos::gateway::SubmitRequest {
-                            transaction_id: transaction_id.clone(),
-                            channel_id: self.channel_name.clone(),
-                            prepared_transaction: Some(envelope),
-                        };
-                        match gateway_client.submit(submit_request).await {
-                            Ok(_) => Ok(result),
-                            Err(err) => Err(String::from_utf8_lossy(err.details()).into_owned()),
-                        }
-                    }
-                    None => Err("None".into()),
-                }
-            }
-            Err(err) => Err(String::from_utf8_lossy(err.details()).into_owned()),
-        }
-    }
+    pub(crate) endorse_request: EndorseRequest,
 }
 
 /// A builder for creating `PreparedTransaction` instances, from which you can submit the transaction.
-/// build() only prepares the transaction. It will not send anything to the network.
+/// `build()` only prepares the transaction. It will not send anything to the network.
 ///
 /// # Examples
 ///
@@ -106,21 +47,24 @@ impl PreparedTransaction {
 ///  }
 /// ```
 pub struct TransaktionBuilder {
-    pub(crate) identity: crate::protos::msp::SerializedIdentity,
-    pub(crate) channel: tonic::transport::Channel,
+    pub(crate) identity: SerializedIdentity,
     pub(crate) signer: Signer,
     pub(crate) channel_name: Option<String>,
     pub(crate) chaincode_id: Option<String>,
     pub(crate) contract_id: Option<String>,
     pub(crate) function_name: Option<String>,
     pub(crate) function_args: Vec<Vec<u8>>,
+    pub(crate) proposal: Option<SignedProposal>,
+    pub(crate) header: Option<Header>,
+    pub(crate) nonce: Option<[u8; NONCE_LENGTH]>,
+    pub(crate) transaction_id: Option<String>,
 }
 
 impl TransaktionBuilder {
     pub fn with_channel_name(
-        mut self,
+        &mut self,
         name: impl Into<String>,
-    ) -> Result<TransaktionBuilder, BuilderError> {
+    ) -> Result<&mut Self, BuilderError> {
         let name = name.into().trim().to_string();
         if name.is_empty() {
             return Err(BuilderError::InvalidParameter(
@@ -131,10 +75,7 @@ impl TransaktionBuilder {
         Ok(self)
     }
 
-    pub fn with_chaincode_id(
-        mut self,
-        id: impl Into<String>,
-    ) -> Result<TransaktionBuilder, BuilderError> {
+    pub fn with_chaincode_id(&mut self, id: impl Into<String>) -> Result<&mut Self, BuilderError> {
         let id = id.into().trim().to_string();
         if id.is_empty() {
             return Err(BuilderError::InvalidParameter(
@@ -145,10 +86,7 @@ impl TransaktionBuilder {
         Ok(self)
     }
 
-    pub fn with_contract_id(
-        mut self,
-        id: impl Into<String>,
-    ) -> Result<TransaktionBuilder, BuilderError> {
+    pub fn with_contract_id(&mut self, id: impl Into<String>) -> Result<&mut Self, BuilderError> {
         let id = id.into().trim().to_string();
         if id.is_empty() {
             return Err(BuilderError::InvalidParameter(
@@ -160,9 +98,9 @@ impl TransaktionBuilder {
     }
 
     pub fn with_function_name(
-        mut self,
+        &mut self,
         name: impl Into<String>,
-    ) -> Result<TransaktionBuilder, BuilderError> {
+    ) -> Result<&mut Self, BuilderError> {
         let name = name.into().trim().to_string();
         if name.is_empty() {
             return Err(BuilderError::InvalidParameter(
@@ -173,7 +111,10 @@ impl TransaktionBuilder {
         Ok(self)
     }
 
-    pub fn with_function_args<T, U>(mut self, args: T) -> Result<TransaktionBuilder, BuilderError>
+    pub fn with_function_args<T, U>(
+        &mut self,
+        args: T,
+    ) -> Result<&mut TransaktionBuilder, BuilderError>
     where
         T: IntoIterator<Item = U>,
         U: AsRef<[u8]>,
@@ -183,140 +124,201 @@ impl TransaktionBuilder {
         }
         Ok(self)
     }
+    ///Statically sets the proposal. If the propsal is none, the builder will generate a new one every time building a transaction
+    pub fn with_proposal(&mut self, signed_proposal: Option<SignedProposal>) -> &mut Self {
+        self.proposal = signed_proposal;
+        self
+    }
+    ///Statically sets the header. If the header is none, the builder will generate a new one every time building a transaction
+    pub fn with_herader(&mut self, signed_proposal: Option<SignedProposal>) -> &mut Self {
+        self.proposal = signed_proposal;
+        self
+    }
+    ///Statically sets the nonce. If the nonce is none, the builder will generate a new one every time building a transaction
+    pub fn with_nonce(&mut self, nonce: Option<[u8; NONCE_LENGTH]>) -> &mut Self {
+        self.nonce = nonce;
+        self
+    }
+    ///Statically sets the transaction id. If the transaction id is none, the builder will generate a new one every time building a transaction
+    pub fn with_transaction_id(&mut self, transaction_id: Option<String>) -> &mut Self {
+        self.transaction_id = transaction_id;
+        self
+    }
 
-    pub fn build(self) -> Result<PreparedTransaction, BuilderError> {
-        let channel_name = match self.channel_name {
-            Some(channel_name) => channel_name,
-            None => return Err(BuilderError::MissingParameter("channel_name".into())),
-        };
-        let chaincode_id = match self.chaincode_id {
-            Some(chaincode_id) => chaincode_id,
-            None => return Err(BuilderError::MissingParameter("chaincode_id".into())),
-        };
-        let function_name = match self.function_name {
-            Some(function_name) => function_name,
-            None => return Err(BuilderError::MissingParameter("function_name".into())),
-        };
-
-        let identity = self.identity;
-
-        //Create signature header
-        let mut nonce = [0u8; NONCE_LENGTH];
-        openssl::rand::rand_bytes(&mut nonce).expect("Unable to generate random bytes");
-        let transaction_id = create_transaction_id(&nonce, identity.encode_to_vec().as_slice());
-
-        let signature_header = crate::protos::common::SignatureHeader {
-            creator: identity.encode_to_vec(),
-            nonce: nonce.to_vec(),
-        };
-
-        let mut hasher =
-            openssl::hash::Hasher::new(openssl::hash::MessageDigest::sha256()).unwrap();
-        hasher
-            .update(identity.id_bytes.encode_to_vec().as_slice())
-            .unwrap();
-        let tls_cert_hash = hasher.finish().expect("Couldn't finalize hash").to_vec();
-
-        let chaincode_id = crate::protos::protos::ChaincodeId {
-            path: String::default(),
-            name: chaincode_id.clone(),
-            version: "1.0".into(),
-        };
-
-        let chaincode_header_expansion = crate::protos::protos::ChaincodeHeaderExtension {
-            chaincode_id: Some(chaincode_id.clone()),
-        };
-
-        let channel_header = crate::protos::common::ChannelHeader {
-            r#type: crate::protos::common::HeaderType::EndorserTransaction.into(),
-            version: 1, //I dunno
-            timestamp: Some(std::time::SystemTime::now().into()),
-            channel_id: channel_name.clone(), // On the test network it will be myChannel
-            tx_id: transaction_id.clone(),
-            epoch: 0, // The epoch in which this header was generated, where epoch is defined based on block height
-            extension: chaincode_header_expansion.encode_to_vec(), // Extension that may be attached based on the header type
-            tls_cert_hash, // If mutual TLS is employed, this represents the hash of the client's TLS certificate
-        };
-
-        let function_args = self.function_args;
-        let mut args = if let Some(contract_id) = self.contract_id {
-            vec![
-                format!("{}:{}", contract_id, function_name)
-                    .as_bytes()
-                    .to_vec(),
-            ]
-        } else {
-            vec![function_name.as_bytes().to_vec()]
-        };
-        for function_arg in function_args {
-            args.push(function_arg);
+    pub fn build(&self) -> Result<PreparedTransaction, BuilderError> {
+        if self.chaincode_id.is_none() {
+            return Err(BuilderError::MissingParameter("chaincode_id".into()));
         }
-        let chaincode_input = crate::protos::protos::ChaincodeInput {
-            args,
-            decorations: std::collections::HashMap::default(), //TODO Chaincode decorations
-            is_init: false,
+        if self.function_name.is_none() {
+            return Err(BuilderError::MissingParameter("function_name".into()));
+        }
+
+        let chaincode_id = ChaincodeId {
+            name: self
+                .chaincode_id
+                .as_ref()
+                .expect("Expected value is none.")
+                .clone(),
+            ..Default::default()
         };
 
-        let chaincode_spec = crate::protos::protos::ChaincodeSpec {
-            r#type: crate::protos::protos::chaincode_spec::Type::Golang.into(),
+        let chaincode_proposal_payload = generate_chaincode_definition(
+            chaincode_id.clone(),
+            self.contract_id.clone(),
+            self.function_name
+                .as_ref()
+                .expect("Expected value is none.")
+                .clone(),
+            self.function_args.clone(),
+        );
+
+        let chaincode_header_extension = ChaincodeHeaderExtension {
             chaincode_id: Some(chaincode_id.clone()),
-            input: Some(chaincode_input),
-            timeout: 10,
         };
 
-        let chaincode_invokation_spec = crate::protos::protos::ChaincodeInvocationSpec {
-            chaincode_spec: Some(chaincode_spec),
+        self.generate_transaction(
+            chaincode_header_extension.encode_to_vec(),
+            chaincode_proposal_payload.encode_to_vec(),
+        )
+    }
+    ///Generates the prepared transaction with the given extension and payload. If you want to do an basic chaincode call use `build()` instead.
+    pub fn generate_transaction(
+        &self,
+        extension: Vec<u8>,
+        payload: Vec<u8>,
+    ) -> Result<PreparedTransaction, BuilderError> {
+        let nonce = match self.nonce {
+            Some(nonce) => nonce,
+            None => generate_nonce(),
         };
-
-        let chaincode_poposal_payload = crate::protos::protos::ChaincodeProposalPayload {
-            input: chaincode_invokation_spec.encode_to_vec(),
-            transient_map: std::collections::HashMap::default(),
+        let transaction_id = match &self.transaction_id {
+            Some(transaction_id) => transaction_id.clone(),
+            None => generate_transaction_id(&nonce, self.identity.encode_to_vec().as_slice()),
         };
-
-        let header = crate::protos::common::Header {
-            channel_header: channel_header.encode_to_vec(),
-            signature_header: signature_header.encode_to_vec(),
+        let header = match &self.header {
+            Some(header) => header.clone(),
+            None => self.generate_header(&nonce, transaction_id.clone(), extension.clone()),
         };
-
-        let proposal = crate::protos::protos::Proposal {
-            header: Message::encode_to_vec(&header),
-            payload: chaincode_poposal_payload.encode_to_vec(),
-            // Optional extensions to the proposal. Its content depends on the Header's
-            // type field.  For the type CHAINCODE, it might be the bytes of a
-            // ChaincodeAction message.
-            extension: chaincode_header_expansion.encode_to_vec(),
+        let signed_proposal = match &self.proposal {
+            Some(proposal) => proposal.clone(),
+            None => self.generate_proposal(&header, extension, payload),
         };
-
-        let signature = sign_message(&proposal.encode_to_vec(), self.signer.pkey.as_slice());
-
-        let signed_proposal = crate::protos::protos::SignedProposal {
-            proposal_bytes: proposal.encode_to_vec(),
-            signature,
-        };
-
-        let proposed_transaction = crate::protos::gateway::ProposedTransaction {
+        let endorse_request = EndorseRequest {
             transaction_id,
-            proposal: Some(signed_proposal),
+            channel_id: self.channel_name.clone().unwrap_or_default(),
+            proposed_transaction: Some(signed_proposal),
             endorsing_organizations: vec![], //Currently empty since private data is not implemented yet
         };
-
-        let endorse_request = crate::protos::gateway::EndorseRequest {
-            transaction_id: proposed_transaction.transaction_id,
-            channel_id: channel_name.clone(), // On the test network it will be myChannel
-            proposed_transaction: proposed_transaction.proposal,
-            endorsing_organizations: proposed_transaction.endorsing_organizations,
-        };
-
         Ok(PreparedTransaction {
-            identity,
-            channel: self.channel,
-            signer: self.signer,
-            channel_name,
+            channel_name: self.channel_name.clone().unwrap_or_default(),
             endorse_request,
         })
     }
-}
+    ///Generates a message from a chaincode. This is only needed for the chaincode feature.
+    /// This method neither requiers function name or function args
+    /// Payload depends on the message type. For Register it is for example the ID of the chaincode
+    pub(crate) fn generate_chaincode_message(
+        &self,
+        r#type: crate::fabric::protos::chaincode_message::Type,
+        payload: Vec<u8>,
+    ) -> Result<ChaincodeMessage, BuilderError> {
+        if self.chaincode_id.is_none() {
+            return Err(BuilderError::MissingParameter("chaincode_id".into()));
+        }
+        let chaincode_id = ChaincodeId {
+            name: self
+                .chaincode_id
+                .as_ref()
+                .expect("Expected value is none.")
+                .clone(),
+            ..Default::default()
+        };
+        let extension = ChaincodeHeaderExtension {
+            chaincode_id: Some(chaincode_id.clone()),
+        };
+        let nonce = match self.nonce {
+            Some(nonce) => nonce,
+            None => generate_nonce(),
+        };
+        let transaction_id = match &self.transaction_id {
+            Some(transaction_id) => transaction_id.clone(),
+            None => generate_transaction_id(&nonce, self.identity.encode_to_vec().as_slice()),
+        };
+        let header = match &self.header {
+            Some(header) => header.clone(),
+            None => self.generate_header(&nonce, transaction_id.clone(), extension.encode_to_vec()),
+        };
+        let signed_proposal = match &self.proposal {
+            Some(proposal) => proposal.clone(),
+            None => self.generate_proposal(&header, extension.encode_to_vec(), payload),
+        };
 
+        Ok(ChaincodeMessage {
+            r#type: r#type.into(),
+            timestamp: Some(std::time::SystemTime::now().into()),
+            payload: chaincode_id.encode_to_vec(),
+            txid: transaction_id,
+            proposal: Some(signed_proposal),
+            chaincode_event: None,
+            channel_id: self.channel_name.clone().unwrap_or_default(),
+        })
+    }
+    pub(crate) fn generate_header(
+        &self,
+        nonce: &[u8],
+        transaction_id: String,
+        extension: Vec<u8>,
+    ) -> Header {
+        let signature_header = SignatureHeader {
+            creator: self.identity.encode_to_vec(),
+            nonce: nonce.to_vec(),
+        };
+
+        let tls_cert_hash = generate_sha256_hash(self.identity.id_bytes.encode_to_vec().as_slice());
+
+        let channel_header = ChannelHeader {
+            r#type: HeaderType::EndorserTransaction.into(),
+            version: 1, //I dunno
+            timestamp: Some(std::time::SystemTime::now().into()),
+            channel_id: self
+                .channel_name
+                .as_ref()
+                .unwrap_or(&String::default())
+                .clone(), // On the test network it will be myChannel
+            tx_id: transaction_id.clone(),
+            epoch: 0, // The epoch in which this header was generated, where epoch is defined based on block height
+            extension: extension.clone(), // Extension that may be attached based on the header type
+            tls_cert_hash, // If mutual TLS is employed, this represents the hash of the client's TLS certificate
+        };
+
+        Header {
+            channel_header: channel_header.encode_to_vec(),
+            signature_header: signature_header.encode_to_vec(),
+        }
+    }
+    pub(crate) fn generate_proposal(
+        &self,
+        header: &Header,
+        extension: Vec<u8>,
+        payload: Vec<u8>,
+    ) -> SignedProposal {
+        let proposal = Proposal {
+            header: Message::encode_to_vec(header),
+            payload,
+            // Optional extensions to the proposal. Its content depends on the Header's
+            // type field.  For the type CHAINCODE, it might be the bytes of a
+            // ChaincodeAction message.
+            extension,
+        };
+
+        let signature = self.signer.sign_message(&proposal.encode_to_vec());
+
+        SignedProposal {
+            proposal_bytes: proposal.encode_to_vec(),
+            signature,
+        }
+    }
+}
 /// Creates a unique transaction ID by concatenating a nonce with an identity and then hashing the result.
 ///
 /// # Arguments
@@ -325,42 +327,61 @@ impl TransaktionBuilder {
 ///
 /// # Returns
 /// A string representing the hashed transaction ID, encoded in hexadecimal format.
-fn create_transaction_id(nonce: &[u8], creator: &[u8]) -> String {
+pub(crate) fn generate_transaction_id(nonce: &[u8], creator: &[u8]) -> String {
     let salted_creator = [nonce, creator].concat();
     let hash = openssl::sha::sha256(salted_creator.as_slice());
     hex::encode(hash)
 }
 
-/// Signs a given message using an ECDSA key derived from PEM bytes.
-/// Ring does not support private-key-only pkcs8 files, which is being used by hyperledger's test network. This is why openssl is being used here and in the project generally.
-/// # Arguments
-/// * `message` - A byte slice representing the message to be signed.
-/// * `pem_bytes` - A byte slice representing the private key in PEM format.
-///
-/// # Returns
-/// A vector of bytes representing the signature.
-fn sign_message(message: &[u8], pem_bytes: &[u8]) -> Vec<u8> {
-    use p256::pkcs8::der::Encode;
+pub(crate) fn generate_nonce() -> [u8; 24] {
+    let mut nonce = [0u8; NONCE_LENGTH];
+    openssl::rand::rand_bytes(&mut nonce).expect("Unable to generate random bytes");
+    nonce
+}
 
-    let ec_key = openssl::ec::EcKey::private_key_from_pem(pem_bytes).unwrap();
+pub(crate) fn generate_sha256_hash(bytes: &[u8]) -> Vec<u8> {
+    let mut hasher = openssl::hash::Hasher::new(openssl::hash::MessageDigest::sha256()).unwrap();
+    hasher.update(bytes).unwrap();
+    hasher.finish().expect("Couldn't finalize hash").to_vec()
+}
 
-    let mut hasher = openssl::sha::Sha256::new();
-    hasher.update(message);
-    let hash = hasher.finish();
-
-    let signature = openssl::ecdsa::EcdsaSig::sign(hash.as_slice(), &ec_key).unwrap();
-
-    //Hyperledger uses a normalized s signature. Openssl does not support it so we use ecdsa implementation from RustCrypto https://github.com/RustCrypto/signatures/tree/master/ecdsa
-    // which is not verified to be secure
-    let signature: ecdsa::Signature<p256::NistP256> =
-        ecdsa::Signature::from_der(signature.to_der().unwrap().as_slice()).unwrap();
-
-    let mut v = vec![];
-    if let Some(signature) = signature.normalize_s() {
-        signature.to_der().encode_to_vec(&mut v).unwrap();
-        v
+pub(crate) fn generate_chaincode_definition(
+    chaincode_id: ChaincodeId,
+    contract_id: Option<String>,
+    function_name: String,
+    function_args: Vec<Vec<u8>>,
+) -> ChaincodeProposalPayload {
+    let mut args = if let Some(contract_id) = contract_id {
+        vec![
+            format!("{}:{}", contract_id, function_name)
+                .as_bytes()
+                .to_vec(),
+        ]
     } else {
-        signature.to_der().encode_to_vec(&mut v).unwrap();
-        v
+        vec![function_name.as_bytes().to_vec()]
+    };
+    for function_arg in function_args {
+        args.push(function_arg);
+    }
+    let chaincode_input = ChaincodeInput {
+        args,
+        decorations: std::collections::HashMap::default(), //TODO Chaincode decorations
+        is_init: false,
+    };
+
+    let chaincode_spec = ChaincodeSpec {
+        r#type: crate::fabric::protos::chaincode_spec::Type::Golang.into(),
+        chaincode_id: Some(chaincode_id),
+        input: Some(chaincode_input),
+        timeout: 10,
+    };
+
+    let chaincode_invokation_spec = ChaincodeInvocationSpec {
+        chaincode_spec: Some(chaincode_spec),
+    };
+
+    ChaincodeProposalPayload {
+        input: chaincode_invokation_spec.encode_to_vec(),
+        transient_map: std::collections::HashMap::default(),
     }
 }

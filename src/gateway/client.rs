@@ -1,9 +1,23 @@
 use std::str::FromStr;
 
-use crate::{error::BuilderError, signer::Signer, transaction::TransaktionBuilder};
+use prost::Message;
+
+use crate::{
+    error::{BuilderError, SubmitError},
+    fabric::{
+        common::Payload,
+        gateway::{SubmitRequest, gateway_client::GatewayClient},
+        msp::SerializedIdentity,
+        protos::{ChaincodeAction, ChaincodeActionPayload, ProposalResponsePayload, Transaction},
+    },
+    signer::Signer,
+    transaction::{
+        PreparedTransaction, TransaktionBuilder, generate_nonce, generate_transaction_id,
+    },
+};
 
 pub struct Client {
-    identity: crate::protos::msp::SerializedIdentity,
+    identity: SerializedIdentity,
     signer: Signer,
     tonic_connection: TonicConnection,
 }
@@ -39,7 +53,7 @@ impl Client {
     ///    .with_function_args(["assetCustom", "orange", "10", "Frank", "600"])?
     ///    .build();
     ///  match tx_builder {
-    ///    Ok(prepared_transaction) => match prepared_transaction.submit().await {
+    ///    Ok(prepared_transaction) => match client.submit_transaction(prepared_transaction).await {
     ///        Ok(result) => {
     ///            println!("{}", String::from_utf8_lossy(result.as_slice()));
     ///        }
@@ -51,13 +65,92 @@ impl Client {
     pub fn get_transaction_builder(&self) -> TransaktionBuilder {
         TransaktionBuilder {
             identity: self.identity.clone(),
-            channel: self.tonic_connection.channel.clone().unwrap(),
             signer: self.signer.clone(),
             channel_name: None,
             chaincode_id: None,
             contract_id: None,
             function_name: None,
             function_args: vec![],
+            proposal: None,
+            header: None,
+            nonce: None,
+            transaction_id: None,
+        }
+    }
+
+    /// Submits a prepared transaction to the network
+    pub async fn submit_transaction(
+        &self,
+        prepared_transaction: PreparedTransaction,
+    ) -> Result<Vec<u8>, SubmitError> {
+        if self.tonic_connection.channel.is_none() {
+            return Err(SubmitError::NotConnected);
+        }
+        let mut gateway_client = GatewayClient::new(
+            self.tonic_connection
+                .channel
+                .as_ref()
+                .expect("Expected value is none.")
+                .clone(),
+        );
+        //First transaction will be endorsed to the network
+        let response = gateway_client
+            .endorse(prepared_transaction.endorse_request)
+            .await;
+        match response {
+            Ok(response) => {
+                match response.into_inner().prepared_transaction {
+                    Some(mut envelope) => {
+                        //TODO CHECK SIGNATURES
+
+                        let mut result = vec![];
+
+                        if let Ok(payload) = Payload::decode(envelope.payload.as_slice())
+                            && let Ok(transaction) = Transaction::decode(payload.data.as_slice())
+                        {
+                            for action in transaction.actions {
+                                if let Ok(action) =
+                                    ChaincodeActionPayload::decode(action.payload.as_slice())
+                                    && let Some(action) = action.action
+                                    && let Ok(payload) = ProposalResponsePayload::decode(
+                                        action.proposal_response_payload.as_slice(),
+                                    )
+                                    && let Ok(action) =
+                                        ChaincodeAction::decode(payload.extension.as_slice())
+                                    && let Some(response) = action.response
+                                {
+                                    result = response.payload;
+                                }
+                            }
+                        }
+                        //Generate random bytes for transaction id and signature header
+                        let nonce = generate_nonce();
+
+                        envelope.signature = self.signer.sign_message(&envelope.payload);
+
+                        //Create transaction id
+                        let transaction_id = generate_transaction_id(
+                            &nonce,
+                            self.identity.encode_to_vec().as_slice(),
+                        );
+                        let submit_request = SubmitRequest {
+                            transaction_id: transaction_id.clone(),
+                            channel_id: prepared_transaction.channel_name.clone(),
+                            prepared_transaction: Some(envelope),
+                        };
+                        match gateway_client.submit(submit_request).await {
+                            Ok(_) => Ok(result),
+                            Err(err) => Err(SubmitError::NodeError(
+                                String::from_utf8_lossy(err.details()).into_owned(),
+                            )),
+                        }
+                    }
+                    None => Err(SubmitError::EmptyRespone),
+                }
+            }
+            Err(err) => Err(SubmitError::NodeError(
+                String::from_utf8_lossy(err.details()).into_owned(),
+            )),
         }
     }
 }
@@ -83,7 +176,7 @@ impl Client {
 /// ```
 #[derive(Default)]
 pub struct ClientBuilder {
-    identity: Option<crate::protos::msp::SerializedIdentity>,
+    identity: Option<SerializedIdentity>,
     tls: Option<Vec<u8>>,
     signer: Option<Signer>,
     scheme: Option<String>,
@@ -108,7 +201,7 @@ impl ClientBuilder {
     ///    .with_identity(identity)?;
     pub fn with_identity(
         mut self,
-        identity: crate::protos::msp::SerializedIdentity,
+        identity: SerializedIdentity,
     ) -> Result<ClientBuilder, BuilderError> {
         self.identity = Some(identity);
         Ok(self)
