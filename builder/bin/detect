@@ -1,0 +1,19 @@
+#!/bin/bash
+
+CHAINCODE_SOURCE_DIR=$1
+CHAINCODE_METADATA_DIR=$2
+>&2 echo "Detect"
+
+# check if the "type" field is set to "rust"
+# crude way without jq which is not in the default fabric peer image
+TYPE=$(tr -d '\n' < "$CHAINCODE_METADATA_DIR/metadata.json" | awk -F':' '{ for (i = 1; i < NF; i++){ if ($i~/type/) { print $(i+1); break }}}'| cut -d\" -f2)
+>&2 echo "$TYPE"
+if [ "$TYPE" = "rust" ]; then
+    >&2 echo "Successfull detected rust"
+    exit 0
+fi
+if [ "$TYPE" = "binary" ]; then
+    >&2 echo "Successfull detected binary"
+    exit 0
+fi
+exit 1

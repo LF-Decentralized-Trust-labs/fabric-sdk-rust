@@ -1,4 +1,4 @@
-use crate::error::BuilderError;
+use crate::{error::BuilderError, fabric::msp::SerializedIdentity};
 /// A builder for creating an identity.
 /// The needed pem file is usally found in the test network under `organizations/peerOrganizations/org1.example.com/users/User1@org1.example.com/msp/signcerts/User1@org1.example.com-cert.pem`
 /// # Examples
@@ -35,11 +35,11 @@ impl IdentityBuilder {
         Ok(self)
     }
 
-    pub fn build(self) -> Result<crate::protos::msp::SerializedIdentity, BuilderError> {
+    pub fn build(self) -> Result<SerializedIdentity, BuilderError> {
         if self.msp.is_none() {
             return Err(BuilderError::MissingParameter("msp".into()));
         }
-        Ok(crate::protos::msp::SerializedIdentity {
+        Ok(SerializedIdentity {
             mspid: self.msp.unwrap(),
             id_bytes: self.cert.clone().into_inner(),
         })

@@ -1,0 +1,12 @@
+[package]
+name = "chaincode_derives"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+darling = "0.21.3"
+quote = "1.0.42"
+syn = "2.0.110"
