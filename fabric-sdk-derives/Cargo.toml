@@ -3,6 +3,7 @@ name = "fabric-sdk-derives"
 authors = ["Arne Fuchs <arnefuchs@pm.me>"]
 version = "0.1.0"
 edition = "2024"
+license = "Apache-2.0"
 description = """
 Derive definitions for the fabric-sdk crate
 """
