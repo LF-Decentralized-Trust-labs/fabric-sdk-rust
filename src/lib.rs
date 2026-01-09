@@ -13,9 +13,11 @@ pub mod identity;
 pub mod signer;
 pub(crate) mod transaction;
 
-pub use chaincode_derives;
-pub use chaincode_derives::transaction;
+pub mod prelude{
+    pub use fabric_sdk_derives as derives;
+    pub use derives::*;
 
-pub use serde;
-pub use serde_json;
-pub use tokio;
+    pub use tokio;
+    pub use serde_json;
+    pub use crate::chaincode::context::Context;
+}

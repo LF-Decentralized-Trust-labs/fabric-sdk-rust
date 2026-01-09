@@ -10,7 +10,7 @@ Here is an simple code example how to use the library:
 ```rust
 use std::error::Error;
 
-use fabric_sdk_rust::{client::ClientBuilder, identity::IdentityBuilder, signer::Signer};
+use fabric_sdk::{client::ClientBuilder, identity::IdentityBuilder, signer::Signer};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {

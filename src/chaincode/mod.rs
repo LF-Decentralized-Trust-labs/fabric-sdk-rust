@@ -5,7 +5,7 @@ mod router;
 
 use std::collections::HashMap;
 
-pub use chaincode_derives;
+pub use crate::prelude::derives;
 
 use crate::{chaincode::context::Context, fabric::protos::ChaincodeId};
 use prost::Message;

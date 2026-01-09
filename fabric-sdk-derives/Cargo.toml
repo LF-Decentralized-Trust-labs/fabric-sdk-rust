@@ -1,0 +1,18 @@
+[package]
+name = "fabric-sdk-derives"
+authors = ["Arne Fuchs <arnefuchs@pm.me>"]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = """
+Derive definitions for the fabric-sdk crate
+"""
+repository="https://github.com/LF-Decentralized-Trust-labs/fabric-sdk-rust"
+keywords = ["fabric", "blockchain", "hyperledger", "smart contract", "web3"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = "1.0.42"
+syn = {version="2.0.110", features=["full"]}

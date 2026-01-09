@@ -16,7 +16,7 @@ The client is being used to interact with the Hyperledger Fabric network. How to
 ### [Chaincode](doc/chaincode/how-to-use.md)
 
 This repo includes a library for developing chaincode for the hyperledeger network. How to use and code examples can be found [here](doc/client/how-to-use.md).
-Running chaincode in rust is not yet supported from and needs some extra configuration, which can also be found in the docs.
+Running chaincode in rust is not yet officially supported and needs some extra configuration, which can also be found in the docs.
 
 ## Contribute
 

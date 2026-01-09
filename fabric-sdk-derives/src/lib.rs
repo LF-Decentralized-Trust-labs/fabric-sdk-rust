@@ -72,19 +72,20 @@ pub fn transaction(args: TokenStream, item: TokenStream) -> TokenStream {
     let generated = quote! {
             pub struct #name_ident{}
             impl fabric_sdk::chaincode::Callable for #name_ident {
-                fn call(&self, ctx: Context, args: Vec<String>) -> fabric_sdk::tokio::task::JoinHandle<Result<String, String>> {
+                fn call(&self, ctx: Context, args: Vec<String>) -> tokio::task::JoinHandle<Result<String, String>> {
                     tokio::spawn(async move{
                         if args.len() != #argument_size{
                             return Err(format!("Found {} arguments but expected {}",args.len(),#argument_size));
                         }
                         eprintln!("{:?}",args);
-                        fabric_sdk::serde_json::to_string(&#fn_ident(ctx, #indexed_args).await).map_err(|e| e.to_string())
+                        serde_json::to_string(&#fn_ident(ctx, #indexed_args).await).map_err(|e| e.to_string())
                     })
                 }
                 fn name(&self) -> &str{
                     #name_string
                 }
             }
+            #[allow(unused)]
             #item
         };
     generated.into()
