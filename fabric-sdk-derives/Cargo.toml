@@ -1,12 +1,17 @@
 [package]
 name = "fabric-sdk-derives"
+authors = ["Arne Fuchs <arnefuchs@pm.me>"]
 version = "0.1.0"
 edition = "2024"
+description = """
+Derive definitions for the fabric-sdk crate
+"""
+repository="https://github.com/LF-Decentralized-Trust-labs/fabric-sdk-rust"
+keywords = ["fabric", "blockchain", "hyperledger", "smart contract", "web3"]
 
 [lib]
 proc-macro = true
 
 [dependencies]
-darling = "0.21.3"
 quote = "1.0.42"
 syn = "2.0.110"
