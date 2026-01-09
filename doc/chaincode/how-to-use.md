@@ -38,13 +38,15 @@ name = "chaincode"
 Since we may not have the required libraries to execute our chaincode we need to tell cargo to statically link the libraries we are using.
 Some crates do not like this and will not compile. Most of them do have a feature though, supporting this. Defining this is optional since it can also be done via cargo arguments.
 
+If you want to configure it for your project create a `.cargo/config.toml` in your project root and put this into it:
+
 ```toml
 [build]
 rustflags = ["-C", "target-feature=+crt-static"]
 target = "x86_64-unknown-linux-gnu"
 ```
 
-Since we run on a different name, we have to tell cargo where the main.rs is.
+Since we run on a different name, we have to tell cargo where the main.rs is, so we define in our `cargo.toml` a bin:
 
 ```toml
 [[bin]]
