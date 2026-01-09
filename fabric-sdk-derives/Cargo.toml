@@ -8,7 +8,7 @@ description = """
 Derive definitions for the fabric-sdk crate
 """
 repository="https://github.com/LF-Decentralized-Trust-labs/fabric-sdk-rust"
-keywords = ["fabric", "blockchain", "hyperledger", "smart contract", "web3"]
+keywords = ["fabric", "blockchain", "hyperledger", "smart-contract", "web3"]
 
 [lib]
 proc-macro = true
