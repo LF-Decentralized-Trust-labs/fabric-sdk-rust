@@ -52,15 +52,21 @@ name = "chaincode"
 path = "src/main.rs"
 ```
 
+### Importing the crate
+
+A simple `use fabric_sdk::prelude::*;` should include all imports you need to use this library;
+
 ### Defining functions
 
-Functions, which should be callable from outside the chaincode, needs to have the `#[fabric_sdk::transaction]
+Functions, which should be callable from outside the chaincode, needs to have the `#[transaction]
 ` macro. This macro enforces the arguments and the return type of the function to implement `Serialize` and `Deserialize` from the `serde_json` crate.
 
 `Result` types are not (yet) supported.
 
 ```rust
-#[fabric_sdk::transaction]
+use fabric_sdk::prelude::*;
+
+#[transaction]
 pub async fn read_asset(ctx: Context, asset_id: String) -> Asset {
     serde_json::from_str(ctx.get_state_string(asset_id.as_str()).await.as_str())
         .expect("Invalid or no asset")
@@ -78,7 +84,7 @@ The functions takes a `&str` to define the name of the contract in the chaincode
 `""` is corresponding to the default contract.
 
 ```rust
-use fabric_sdk::derives::functions;
+use fabric_sdk::prelude::*;
 
 fn main() {
     fabric_sdk::chaincode::initialize()
