@@ -78,7 +78,7 @@ The functions takes a `&str` to define the name of the contract in the chaincode
 `""` is corresponding to the default contract.
 
 ```rust
-use fabric_sdk::chaincode_derives::functions;
+use fabric_sdk::derives::functions;
 
 fn main() {
     fabric_sdk::chaincode::initialize()

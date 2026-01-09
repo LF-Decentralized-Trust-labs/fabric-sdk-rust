@@ -19,7 +19,7 @@ tokio = { version = "1.28.0", features = ["full"] }
 futures-util = "0.3.31"
 serde = {version = "1.0.219", features = ["derive"]}
 serde_json = "1.0.143"
-chaincode_derives = { version = "0.1.0", path = "chaincode-derives" }
+fabric-sdk-derives = { version = "0.1.0", path = "fabric-sdk-derives" }
 
 #Client
 #rustls = { version = "0.23.23", features = ["ring"] } # Makes problems when compiling static

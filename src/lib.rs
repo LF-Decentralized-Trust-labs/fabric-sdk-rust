@@ -13,8 +13,9 @@ pub mod identity;
 pub mod signer;
 pub(crate) mod transaction;
 
-pub use chaincode_derives;
-pub use chaincode_derives::transaction;
+pub use fabric_sdk_derives as derives;
+pub use derives::transaction;
+pub use derives::functions;
 
 pub use serde;
 pub use serde_json;

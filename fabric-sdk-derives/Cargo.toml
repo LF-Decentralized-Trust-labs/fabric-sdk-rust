@@ -1,5 +1,5 @@
 [package]
-name = "chaincode_derives"
+name = "fabric-sdk-derives"
 version = "0.1.0"
 edition = "2024"
 
