@@ -1,7 +1,7 @@
 [package]
 name = "fabric-sdk"
 authors = ["Arne Fuchs <arnefuchs@pm.me>"]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 build = "build.rs"
 license = "Apache-2.0"
@@ -9,7 +9,7 @@ description = """
 Interact and program chaincode for the Hyperledger Fabric blockchain network
 """
 repository="https://github.com/LF-Decentralized-Trust-labs/fabric-sdk-rust"
-keywords = ["fabric", "blockchain", "hyperledger", "smart contract", "web3"]
+keywords = ["fabric", "blockchain", "hyperledger", "smart-contract", "web3"]
 readme="README.md"
 
 [dependencies]

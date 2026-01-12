@@ -5,7 +5,7 @@ use futures_util::StreamExt;
 use prost::Message;
 use tokio::sync::Mutex;
 
-use crate::{chaincode::message::MessageBuilder, fabric::protos::{ChaincodeMessage, DelState, GetState, GetStateByRange, PutState, QueryResponse, chaincode_message}};
+use crate::{chaincode::message::MessageBuilder, fabric::protos::{ChaincodeEvent, ChaincodeMessage, DelState, GetState, GetStateByRange, PutState, QueryResponse, SignedProposal, chaincode_message}};
 
 static UNSPECIFIED_START_KEY: &str = "\u{0001}";
 
@@ -84,5 +84,35 @@ impl Context{
         let message_context = self.message.clone();
         self.message_builder.lock().await.respond(chaincode_message::Type::DelState, payload, message_context).await;
         self.peer_response_queue.lock().await.next().await.expect("[Context] Failed to receive response from channel");
+    }
+
+    /// Returns the transaction timestamp in seconds.
+    pub fn get_tx_timestamp(&self) -> i64 {
+        self.message.timestamp.expect("No timestamp found").seconds
+    }
+
+    /// Returns the channel id of the chaincode message. This value is being cloned.
+    pub fn get_channel_id(&self) -> String {
+        self.message.channel_id.clone()
+    }
+
+    /// Returns the transaction id of the chaincode message. This value is being cloned.
+    pub fn get_tx_id(&self) -> String {
+        self.message.txid.clone()
+    }
+
+    /// Returns the signed proposal of the chaincode message. This value is being cloned.
+    pub fn get_signed_proposal(&self) -> SignedProposal {
+        self.message.proposal.clone().expect("No signed proposal found")
+    }
+
+    /// Returns the chaincode event of the chaincode message. This value is being cloned.
+    pub fn get_event(&self) -> Option<ChaincodeEvent>{
+        self.message.chaincode_event.clone()
+    }
+
+    /// Returns the identity of the agent (or user) submitting the transaction.
+    pub fn get_creator(&self) -> Vec<u8> {
+        unimplemented!()
     }
 }
