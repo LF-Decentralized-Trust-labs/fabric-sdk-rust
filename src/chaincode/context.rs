@@ -5,7 +5,7 @@ use futures_util::StreamExt;
 use prost::Message;
 use tokio::sync::Mutex;
 
-use crate::{chaincode::message::MessageBuilder, fabric::protos::{ChaincodeEvent, ChaincodeMessage, DelState, GetState, GetStateByRange, PutState, QueryResponse, SignedProposal, chaincode_message}};
+use crate::{chaincode::message::MessageBuilder, fabric::{common::{ChannelHeader, Header}, protos::{ChaincodeEvent, ChaincodeMessage, DelState, GetState, GetStateByRange, PutState, QueryResponse, SignedProposal, chaincode_message}}};
 
 static UNSPECIFIED_START_KEY: &str = "\u{0001}";
 
@@ -86,9 +86,27 @@ impl Context{
         self.peer_response_queue.lock().await.next().await.expect("[Context] Failed to receive response from channel");
     }
 
+    /*
+     * final Proposal proposal = Proposal.parseFrom(signedProposal.getProposalBytes());
+                 final Header header = Header.parseFrom(proposal.getHeader());
+                 final ChannelHeader channelHeader = ChannelHeader.parseFrom(header.getChannelHeader());
+                 validateProposalType(channelHeader);
+                 final SignatureHeader signatureHeader = SignatureHeader.parseFrom(header.getSignatureHeader());
+                 final ChaincodeProposalPayload chaincodeProposalPayload =
+                         ChaincodeProposalPayload.parseFrom(proposal.getPayload());
+                 final Timestamp timestamp = channelHeader.getTimestamp();
+
+                 this.txTimestamp = Instant.ofEpochSecond(timestamp.getSeconds(), timestamp.getNanos());
+                 this.creator = signatureHeader.getCreator();
+                 this.transientMap = chaincodeProposalPayload.getTransientMapMap();
+                 this.binding = computeBinding(channelHeader, signatureHeader);
+     */
+
     /// Returns the transaction timestamp in seconds.
     pub fn get_tx_timestamp(&self) -> i64 {
-        self.message.timestamp.expect("No timestamp found").seconds
+        let header = Header::decode(self.message.proposal.as_ref().expect("No signed proposal").encode_to_vec().as_slice()).expect("Invalid header");
+        let channel_header = ChannelHeader::decode(header.channel_header.as_slice()).expect("Invalid channel header");
+        channel_header.timestamp.expect("No timestamp").seconds
     }
 
     /// Returns the channel id of the chaincode message. This value is being cloned.
