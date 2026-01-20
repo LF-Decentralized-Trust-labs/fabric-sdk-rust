@@ -11,6 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "fabric-protos/peer/chaincode.proto",
                 "fabric-protos/peer/chaincode_shim.proto",
                 "fabric-protos/msp/identities.proto",
+                "fabric-protos/ledger/queryresult/kv_query_result.proto"
             ],
             &["fabric-protos"],
         )?;
