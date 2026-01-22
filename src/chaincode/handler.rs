@@ -108,8 +108,8 @@ impl MessageHandler {
                                     Ok(result) => match result {
                                         Ok(message) => Response {
                                             status: Status::Success.into(),
-                                            message,
-                                            payload: vec![],
+                                            message: String::default(),
+                                            payload: message.as_bytes().to_vec(),
                                         },
                                         Err(err) => Response {
                                             status: Status::InternalServerError.into(),

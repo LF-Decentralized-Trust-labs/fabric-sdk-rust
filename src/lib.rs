@@ -5,6 +5,7 @@ mod fabric {
     pub mod msp;
     pub mod orderer;
     pub mod protos;
+    pub mod queryresult;
 }
 pub mod chaincode;
 pub mod error;

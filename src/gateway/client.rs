@@ -108,6 +108,7 @@ impl Client {
                         if let Ok(payload) = Payload::decode(envelope.payload.as_slice())
                             && let Ok(transaction) = Transaction::decode(payload.data.as_slice())
                         {
+                            let mut payload_found = false;
                             for action in transaction.actions {
                                 if let Ok(action) =
                                     ChaincodeActionPayload::decode(action.payload.as_slice())
@@ -120,7 +121,11 @@ impl Client {
                                     && let Some(response) = action.response
                                 {
                                     result = response.payload;
+                                    payload_found = true;
                                 }
+                            }
+                            if !payload_found{
+                                panic!("Couldn't find payload in response: {}",String::from_utf8_lossy(envelope.payload.as_slice()))
                             }
                         }
                         //Generate random bytes for transaction id and signature header

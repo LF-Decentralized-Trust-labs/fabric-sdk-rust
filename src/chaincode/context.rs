@@ -5,7 +5,7 @@ use futures_util::StreamExt;
 use prost::Message;
 use tokio::sync::Mutex;
 
-use crate::{chaincode::message::MessageBuilder, fabric::protos::{ChaincodeEvent, ChaincodeMessage, DelState, GetState, GetStateByRange, PutState, QueryResponse, SignedProposal, chaincode_message}};
+use crate::{chaincode::message::MessageBuilder, fabric::{common::{ChannelHeader, Header}, protos::{ChaincodeEvent, ChaincodeMessage, DelState, GetState, GetStateByRange, Proposal, PutState, QueryResponse, SignedProposal, chaincode_message}, queryresult::Kv}};
 
 static UNSPECIFIED_START_KEY: &str = "\u{0001}";
 
@@ -56,7 +56,21 @@ impl Context{
         self.message_builder.lock().await.respond(chaincode_message::Type::GetStateByRange, payload, message_context).await;
         let response = self.peer_response_queue.lock().await.next().await.expect("[Context] Failed to receive response from channel");
         let query_response = QueryResponse::decode(response.payload.as_slice()).expect("[Context] Invalid query response");
-        query_response.results.iter().cloned().map(|f| f.result_bytes).collect::<Vec<Vec<u8>>>()
+        /*TODO request more from peer if has_more is true
+        See:
+        final ByteString requestPayload = QueryStateNext.newBuilder()
+                .setId(currentQueryResponse.getId())
+                .build()
+                .toByteString();
+        final ChaincodeMessage requestNextMessage =
+            ChaincodeMessageFactory.newEventMessage(QUERY_STATE_NEXT, channelId, txId, requestPayload);
+        final ByteString responseMessage = QueryResultsIteratorImpl.this.handler.invoke(requestNextMessage);
+        currentQueryResponse = QueryResponse.parseFrom(responseMessage);
+        currentIterator = currentQueryResponse.getResultsList().iterator();
+
+        Here might be an iterator needed as in the java implementation above. This has also the benefit that the key can be called
+        */
+        query_response.results.iter().map(|f| Kv::decode(f.result_bytes.as_slice()).expect("Invalid KV")).map(|f| f.value ).collect::<Vec<Vec<u8>>>()
     }
 
     //Setter
@@ -88,7 +102,10 @@ impl Context{
 
     /// Returns the transaction timestamp in seconds.
     pub fn get_tx_timestamp(&self) -> i64 {
-        self.message.timestamp.expect("No timestamp found").seconds
+        let proposal = Proposal::decode(self.message.proposal.as_ref().expect("No signed proposal").proposal_bytes.as_slice()).expect("Invalid proposal bytes");
+        let header = Header::decode(proposal.header.as_slice()).expect("Invalid header");
+        let channel_header = ChannelHeader::decode(header.channel_header.as_slice()).expect("Invalid channel header");
+        channel_header.timestamp.expect("No timestamp").seconds
     }
 
     /// Returns the channel id of the chaincode message. This value is being cloned.

@@ -77,7 +77,6 @@ pub fn transaction(args: TokenStream, item: TokenStream) -> TokenStream {
                         if args.len() != #argument_size{
                             return Err(format!("Found {} arguments but expected {}",args.len(),#argument_size));
                         }
-                        eprintln!("{:?}",args);
                         serde_json::to_string(&#fn_ident(ctx, #indexed_args).await).map_err(|e| e.to_string())
                     })
                 }
