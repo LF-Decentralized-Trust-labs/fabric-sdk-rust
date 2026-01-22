@@ -1,5 +1,7 @@
 # Fabric SDK Rust
 
+[![Current Crates.io Version](https://img.shields.io/crates/v/fabric-sdk)](https://crates.io/crates/fabric-sdk)
+
 ## Overview
 
 The Fabric SDK for Rust allows to interact with a Hyperledger Fabric blockchain network and program chaincode. It is currently in early stage and many features might be missing.
