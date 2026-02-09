@@ -639,6 +639,7 @@ pub enum HeaderType {
     /// Used by the SDK to submit endorser based transactions
     EndorserTransaction = 3,
     /// Was used internally by the orderer for management, no longer used since system channel was removed
+    #[deprecated]
     OrdererTransaction = 4,
     /// Used as the type for Envelope messages submitted to instruct the Deliver API to seek
     DeliverSeekInfo = 5,
@@ -656,6 +657,7 @@ impl HeaderType {
             Self::Config => "CONFIG",
             Self::ConfigUpdate => "CONFIG_UPDATE",
             Self::EndorserTransaction => "ENDORSER_TRANSACTION",
+            #[allow(deprecated)]
             Self::OrdererTransaction => "ORDERER_TRANSACTION",
             Self::DeliverSeekInfo => "DELIVER_SEEK_INFO",
             Self::ChaincodePackage => "CHAINCODE_PACKAGE",
@@ -668,7 +670,7 @@ impl HeaderType {
             "CONFIG" => Some(Self::Config),
             "CONFIG_UPDATE" => Some(Self::ConfigUpdate),
             "ENDORSER_TRANSACTION" => Some(Self::EndorserTransaction),
-            "ORDERER_TRANSACTION" => Some(Self::OrdererTransaction),
+            "ORDERER_TRANSACTION" => Some(#[allow(deprecated)] Self::OrdererTransaction),
             "DELIVER_SEEK_INFO" => Some(Self::DeliverSeekInfo),
             "CHAINCODE_PACKAGE" => Some(Self::ChaincodePackage),
             _ => None,
@@ -682,10 +684,12 @@ pub enum BlockMetadataIndex {
     /// Block metadata array position for block signatures
     Signatures = 0,
     /// Block metadata array position to store last configuration block sequence number
+    #[deprecated]
     LastConfig = 1,
     /// Block metadata array position to store serialized bit array filter of invalid transactions
     TransactionsFilter = 2,
     /// Block metadata array position to store operational metadata for orderers
+    #[deprecated]
     Orderer = 3,
     /// Block metadata array position to store the hash of TRANSACTIONS_FILTER, State Updates,
     /// and the COMMIT_HASH of the previous block
@@ -699,8 +703,10 @@ impl BlockMetadataIndex {
     pub fn as_str_name(&self) -> &'static str {
         match self {
             Self::Signatures => "SIGNATURES",
+            #[allow(deprecated)]
             Self::LastConfig => "LAST_CONFIG",
             Self::TransactionsFilter => "TRANSACTIONS_FILTER",
+            #[allow(deprecated)]
             Self::Orderer => "ORDERER",
             Self::CommitHash => "COMMIT_HASH",
         }
@@ -709,9 +715,9 @@ impl BlockMetadataIndex {
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "SIGNATURES" => Some(Self::Signatures),
-            "LAST_CONFIG" => Some(Self::LastConfig),
+            "LAST_CONFIG" => Some(#[allow(deprecated)] Self::LastConfig),
             "TRANSACTIONS_FILTER" => Some(Self::TransactionsFilter),
-            "ORDERER" => Some(Self::Orderer),
+            "ORDERER" => Some(#[allow(deprecated)] Self::Orderer),
             "COMMIT_HASH" => Some(Self::CommitHash),
             _ => None,
         }
