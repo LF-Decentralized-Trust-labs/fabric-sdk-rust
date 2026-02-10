@@ -1,8 +1,8 @@
 # Using the client
 
-The crate can be used via github link:
+The crate can be used via crates.io:
 ```toml
-fabric-sdk = {git="https://github.com/LF-Decentralized-Trust-labs/fabric-sdk-rust"}
+fabric-sdk = "0.3.0"
 ```
 
 Here is an simple code example how to use the library:
