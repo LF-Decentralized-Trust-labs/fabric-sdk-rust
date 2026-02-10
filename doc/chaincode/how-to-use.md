@@ -22,7 +22,7 @@ A simple asset transfer example can be found in the [fabric-samples fork](https:
 
 The crate can be used via direct github link:
 ```toml
-fabric-sdk = {git="https://github.com/LF-Decentralized-Trust-labs/fabric-sdk-rust"}
+fabric-sdk = {version = "0.3.0", features = ["chaincode"], default-features = false}
 ```
 
 ### Configure project

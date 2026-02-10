@@ -5,7 +5,7 @@ use futures_util::StreamExt;
 use prost::Message;
 use tokio::sync::Mutex;
 
-use crate::{chaincode::message::MessageBuilder, fabric::{common::{ChannelHeader, Header}, protos::{ChaincodeEvent, ChaincodeMessage, DelState, GetState, GetStateByRange, Proposal, PutState, QueryResponse, SignedProposal, chaincode_message}, queryresult::Kv}};
+use crate::{chaincode::message::MessageBuilder, fabric::{common::{ChannelHeader, Header}, protos::{ChaincodeEvent, ChaincodeMessage, DelState, GetState, GetStateByRange, Proposal, PutState, QueryResponse, QueryStateNext, SignedProposal, chaincode_message}, queryresult::Kv}};
 
 static UNSPECIFIED_START_KEY: &str = "\u{0001}";
 
@@ -40,7 +40,7 @@ impl Context{
         String::from_utf8(self.get_state(key).await).expect("[Context] Invalid UTF-8 encoding")
     }
 
-    pub async fn get_state_by_range(&self, start_key: &str, end_key: &str) -> Vec<Vec<u8>> {
+    pub async fn get_state_by_range(&self, start_key: &str, end_key: &str) -> RangeResult {
         let start_key = if start_key.is_empty() {
             UNSPECIFIED_START_KEY
         }else{start_key};
@@ -56,21 +56,7 @@ impl Context{
         self.message_builder.lock().await.respond(chaincode_message::Type::GetStateByRange, payload, message_context).await;
         let response = self.peer_response_queue.lock().await.next().await.expect("[Context] Failed to receive response from channel");
         let query_response = QueryResponse::decode(response.payload.as_slice()).expect("[Context] Invalid query response");
-        /*TODO request more from peer if has_more is true
-        See:
-        final ByteString requestPayload = QueryStateNext.newBuilder()
-                .setId(currentQueryResponse.getId())
-                .build()
-                .toByteString();
-        final ChaincodeMessage requestNextMessage =
-            ChaincodeMessageFactory.newEventMessage(QUERY_STATE_NEXT, channelId, txId, requestPayload);
-        final ByteString responseMessage = QueryResultsIteratorImpl.this.handler.invoke(requestNextMessage);
-        currentQueryResponse = QueryResponse.parseFrom(responseMessage);
-        currentIterator = currentQueryResponse.getResultsList().iterator();
-
-        Here might be an iterator needed as in the java implementation above. This has also the benefit that the key can be called
-        */
-        query_response.results.iter().map(|f| Kv::decode(f.result_bytes.as_slice()).expect("Invalid KV")).map(|f| f.value ).collect::<Vec<Vec<u8>>>()
+        RangeResult::new(self.message_builder.clone(), self.peer_response_queue.clone(), self.message.clone(), query_response)
     }
 
     //Setter
@@ -131,5 +117,66 @@ impl Context{
     /// Returns the identity of the agent (or user) submitting the transaction.
     pub fn get_creator(&self) -> Vec<u8> {
         unimplemented!()
+    }
+}
+pub struct RangeResult{
+    message_builder: Arc<Mutex<MessageBuilder>>,
+    peer_response_queue: Arc<Mutex<Receiver<ChaincodeMessage>>>,
+    message: ChaincodeMessage,
+    query_response: QueryResponse,
+    results: Vec<Vec<u8>>,
+    index: usize
+}
+impl RangeResult{
+    pub fn new(message_builder: Arc<Mutex<MessageBuilder>>,    peer_response_queue: Arc<Mutex<Receiver<ChaincodeMessage>>>,
+ message: ChaincodeMessage,query_response: QueryResponse) -> Self{
+        let results = query_response.results.iter().map(|f| Kv::decode(f.result_bytes.as_slice()).expect("Invalid KV")).map(|f| f.value ).collect::<Vec<Vec<u8>>>();
+        RangeResult{
+            message_builder,
+            peer_response_queue,
+            message,
+            query_response,
+            results,
+            index: 0,
+        }
+    }
+}
+impl Iterator for RangeResult {
+    type Item = Vec<u8>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.results.len(){
+            //We still have some results in our buffer
+            self.index += 1;
+            self.results.get(self.index-1).cloned()
+        }else{
+            //our buffer has been iterated through -> check if the node has more
+            if self.query_response.has_more{
+                //Request more from node
+                let payload = QueryStateNext{
+                    id: self.query_response.id.clone(),
+                }.encode_to_vec();
+                let message_context = self.message.clone();
+                let message_builder = self.message_builder.clone();
+                tokio::spawn(async move{
+                    message_builder.lock().await.respond(chaincode_message::Type::QueryStateNext, payload, message_context).await;
+                });
+                loop {
+                    match self.peer_response_queue.blocking_lock().try_next(){
+                        Ok(Some(response)) => {
+                            let query_response = QueryResponse::decode(response.payload.as_slice()).expect("[Context] Invalid query response");
+                            self.query_response = query_response;
+                            self.index = 1;
+                            self.results = self.query_response.results.iter().map(|f| Kv::decode(f.result_bytes.as_slice()).expect("Invalid KV")).map(|f| f.value ).collect::<Vec<Vec<u8>>>();
+                            return self.results.first().cloned();
+                        },
+                        Ok(None) => {panic!("[Context] Query Channel is closed")},
+                        Err(_) => {},
+                    }
+                }
+            }else{
+                None
+            }
+        }
     }
 }

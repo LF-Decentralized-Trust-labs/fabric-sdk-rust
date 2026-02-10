@@ -1,5 +1,7 @@
 # Fabric SDK Rust
 
+[![Current Crates.io Version](https://img.shields.io/crates/v/fabric-sdk)](https://crates.io/crates/fabric-sdk)
+
 ## Overview
 
 The Fabric SDK for Rust allows to interact with a Hyperledger Fabric blockchain network and program chaincode. It is currently in early stage and many features might be missing.
@@ -15,7 +17,7 @@ The client is being used to interact with the Hyperledger Fabric network. How to
 
 ### [Chaincode](doc/chaincode/how-to-use.md)
 
-This repo includes a library for developing chaincode for the hyperledeger network. How to use and code examples can be found [here](doc/client/how-to-use.md).
+This repo includes a library for developing chaincode for the hyperledeger network. How to use and code examples can be found [here](doc/chaincode/how-to-use.md).
 Running chaincode in rust is not yet officially supported and needs some extra configuration, which can also be found in the docs.
 
 ## Contribute
