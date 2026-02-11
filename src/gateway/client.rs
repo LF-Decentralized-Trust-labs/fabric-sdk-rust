@@ -6,7 +6,7 @@ use crate::{
     error::{BuilderError, SubmitError},
     fabric::{
         common::Payload,
-        gateway::{SubmitRequest, gateway_client::GatewayClient},
+        gateway::{CommitStatusRequest, CommitStatusResponse, SignedCommitStatusRequest, SubmitRequest, gateway_client::GatewayClient},
         msp::SerializedIdentity,
         protos::{ChaincodeAction, ChaincodeActionPayload, ProposalResponsePayload, Transaction},
     },
@@ -153,6 +153,40 @@ impl Client {
                     None => Err(SubmitError::EmptyRespone),
                 }
             }
+            Err(err) => Err(SubmitError::NodeError(
+                String::from_utf8_lossy(err.details()).into_owned(),
+            )),
+        }
+    }
+
+    /// Checks for the commit status of a given transaction
+    ///
+    /// This method will run until the commit will occur if it hasn’t already committed. So only run this immidentialy after [`submit()`](submit).
+    pub async fn commit_status(&self, transaction_id: String, channel_id: String) -> Result<CommitStatusResponse, SubmitError>{
+        if self.tonic_connection.channel.is_none() {
+            return Err(SubmitError::NotConnected);
+        }
+        let request = CommitStatusRequest{
+            transaction_id,
+            channel_id,
+            identity: self.identity.encode_to_vec(),
+        };
+        let mut gateway_client = GatewayClient::new(
+            self.tonic_connection
+                .channel
+                .as_ref()
+                .expect("Expected value is none.")
+                .clone(),
+        );
+        let request = SignedCommitStatusRequest{
+            request: request.encode_to_vec(),
+            signature: self.signer.sign_message(&request.encode_to_vec()),
+        };
+        let response = gateway_client.commit_status(request).await;
+        match response {
+            Ok(response) => {
+                Ok(response.into_inner())
+            },
             Err(err) => Err(SubmitError::NodeError(
                 String::from_utf8_lossy(err.details()).into_owned(),
             )),
