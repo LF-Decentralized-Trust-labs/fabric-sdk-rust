@@ -192,6 +192,12 @@ impl Client {
             )),
         }
     }
+
+    /// Unimplemented.
+    /// The ChaincodeEvents service supplies a stream of responses, each containing all the events emitted by the requested chaincode for a specific block. The streamed responses are ordered by ascending block number. Responses are only returned for blocks that contain the requested events, while blocks not containing any of the requested events are skipped.
+    pub async fn chaincode_events(&self) {
+        unimplemented!()
+    }
 }
 
 /// The `ClientBuilder` struct is used to configure and build a `Client` instance. It provides methods to set various parameters required for creating a client, such as identity, signer, TLS configuration, scheme, and authority.
