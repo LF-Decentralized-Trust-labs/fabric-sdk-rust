@@ -17,6 +17,7 @@
 ///      (iii)ByIdentity that denotes that MSPPrincipal is mapped to a single
 ///           identity/certificate; this would mean that the Principal bytes
 ///           message
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct MspPrincipal {
     /// Classification describes the way that one should process
@@ -40,6 +41,7 @@ pub struct MspPrincipal {
 }
 /// Nested message and enum types in `MSPPrincipal`.
 pub mod msp_principal {
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(
         Clone,
         Copy,
@@ -105,6 +107,7 @@ pub mod msp_principal {
 /// OrganizationUnit governs the organization of the Principal
 /// field of a policy principal when a specific organization unity members
 /// are to be defined within a policy principal.
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct OrganizationUnit {
     /// MSPIdentifier represents the identifier of the MSP this organization unit
@@ -123,6 +126,7 @@ pub struct OrganizationUnit {
 /// MSPRole governs the organization of the Principal
 /// field of an MSPPrincipal when it aims to define one of the
 /// two dedicated roles within an MSP: Admin and Members.
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct MspRole {
     /// MSPIdentifier represents the identifier of the MSP this principal
@@ -136,6 +140,7 @@ pub struct MspRole {
 }
 /// Nested message and enum types in `MSPRole`.
 pub mod msp_role {
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(
         Clone,
         Copy,
@@ -188,6 +193,7 @@ pub mod msp_role {
     }
 }
 /// MSPIdentityAnonymity can be used to enforce an identity to be anonymous or nominal.
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct MspIdentityAnonymity {
     #[prost(enumeration = "msp_identity_anonymity::MspIdentityAnonymityType", tag = "1")]
@@ -195,6 +201,7 @@ pub struct MspIdentityAnonymity {
 }
 /// Nested message and enum types in `MSPIdentityAnonymity`.
 pub mod msp_identity_anonymity {
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(
         Clone,
         Copy,
@@ -237,6 +244,7 @@ pub mod msp_identity_anonymity {
 /// CombinedPrincipal governs the organization of the Principal
 /// field of a policy principal when principal_classification has
 /// indicated that a combined form of principals is required
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CombinedPrincipal {
     /// Principals refer to combined principals
@@ -245,6 +253,7 @@ pub struct CombinedPrincipal {
 }
 /// Policy expresses a policy which the orderer can evaluate, because there has been some desire expressed to support
 /// multiple policy engines, this is typed as a oneof for now
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Policy {
     /// For outside implementors, consider the first 1000 types reserved, otherwise one of PolicyType
@@ -255,6 +264,7 @@ pub struct Policy {
 }
 /// Nested message and enum types in `Policy`.
 pub mod policy {
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(
         Clone,
         Copy,
@@ -300,6 +310,7 @@ pub mod policy {
     }
 }
 /// SignaturePolicyEnvelope wraps a SignaturePolicy and includes a version for future enhancements
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SignaturePolicyEnvelope {
     #[prost(int32, tag = "1")]
@@ -315,6 +326,7 @@ pub struct SignaturePolicyEnvelope {
 /// SignedBy implies that the signature is from a valid certificate which is signed by the trusted
 /// authority specified in the bytes.  This will be the certificate itself for a self-signed certificate
 /// and will be the CA for more traditional certificates
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SignaturePolicy {
     #[prost(oneof = "signature_policy::Type", tags = "1, 2")]
@@ -322,6 +334,7 @@ pub struct SignaturePolicy {
 }
 /// Nested message and enum types in `SignaturePolicy`.
 pub mod signature_policy {
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct NOutOf {
         #[prost(int32, tag = "1")]
@@ -329,6 +342,7 @@ pub mod signature_policy {
         #[prost(message, repeated, tag = "2")]
         pub rules: ::prost::alloc::vec::Vec<super::SignaturePolicy>,
     }
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Type {
         #[prost(int32, tag = "1")]
@@ -345,6 +359,7 @@ pub mod signature_policy {
 /// For example, with 4 sub-groups, and a policy name of "foo", ImplicitMetaPolicy retrieves
 /// each sub-group, retrieves policy "foo" for each subgroup, evaluates it, and, in the case of ANY
 /// 1 satisfied is sufficient, ALL would require 4 signatures, and MAJORITY would require 3 signatures.
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ImplicitMetaPolicy {
     #[prost(string, tag = "1")]
@@ -354,6 +369,7 @@ pub struct ImplicitMetaPolicy {
 }
 /// Nested message and enum types in `ImplicitMetaPolicy`.
 pub mod implicit_meta_policy {
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(
         Clone,
         Copy,
@@ -399,6 +415,7 @@ pub mod implicit_meta_policy {
 }
 /// ApplicationPolicy captures the diffenrent policy types that
 /// are set and evaluted at the application level.
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ApplicationPolicy {
     #[prost(oneof = "application_policy::Type", tags = "1, 2")]
@@ -406,6 +423,7 @@ pub struct ApplicationPolicy {
 }
 /// Nested message and enum types in `ApplicationPolicy`.
 pub mod application_policy {
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Type {
         /// SignaturePolicy type is used if the policy is specified as
@@ -421,12 +439,14 @@ pub mod application_policy {
     }
 }
 /// LastConfig is the encoded value for the Metadata message which is encoded in the LAST_CONFIGURATION block metadata index
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct LastConfig {
     #[prost(uint64, tag = "1")]
     pub index: u64,
 }
 /// Metadata is a common structure to be used to encode block metadata
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Metadata {
     #[prost(bytes = "vec", tag = "1")]
@@ -434,6 +454,7 @@ pub struct Metadata {
     #[prost(message, repeated, tag = "2")]
     pub signatures: ::prost::alloc::vec::Vec<MetadataSignature>,
 }
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct MetadataSignature {
     /// An encoded SignatureHeader
@@ -447,6 +468,7 @@ pub struct MetadataSignature {
     pub identifier_header: ::prost::alloc::vec::Vec<u8>,
 }
 /// IdentifierHeader is used as an alternative to a SignatureHeader when the creator can be referenced by id
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct IdentifierHeader {
     /// A unique identifier that represents the creator of the message
@@ -456,6 +478,7 @@ pub struct IdentifierHeader {
     #[prost(bytes = "vec", tag = "2")]
     pub nonce: ::prost::alloc::vec::Vec<u8>,
 }
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Header {
     #[prost(bytes = "vec", tag = "1")]
@@ -464,6 +487,7 @@ pub struct Header {
     pub signature_header: ::prost::alloc::vec::Vec<u8>,
 }
 /// Header is a generic replay prevention and identity message to include in a signed payload
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ChannelHeader {
     /// Header types 0-10000 are reserved and defined by HeaderType
@@ -475,7 +499,7 @@ pub struct ChannelHeader {
     /// Timestamp is the local time when the message was created
     /// by the sender
     #[prost(message, optional, tag = "3")]
-    pub timestamp: ::core::option::Option<::prost_types::Timestamp>,
+    pub timestamp: ::core::option::Option<crate::fabric::google_protobuf::Timestamp>,
     /// Identifier of the channel this message is bound for
     #[prost(string, tag = "4")]
     pub channel_id: ::prost::alloc::string::String,
@@ -504,6 +528,7 @@ pub struct ChannelHeader {
     #[prost(bytes = "vec", tag = "8")]
     pub tls_cert_hash: ::prost::alloc::vec::Vec<u8>,
 }
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SignatureHeader {
     /// Creator of the message, a marshaled msp.SerializedIdentity
@@ -514,6 +539,7 @@ pub struct SignatureHeader {
     pub nonce: ::prost::alloc::vec::Vec<u8>,
 }
 /// Payload is the message contents (and header to allow for signing)
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Payload {
     /// Header is included to provide identity and prevent replay
@@ -524,6 +550,7 @@ pub struct Payload {
     pub data: ::prost::alloc::vec::Vec<u8>,
 }
 /// Envelope wraps a Payload with a signature so that the message may be authenticated
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Envelope {
     /// A marshaled Payload
@@ -537,6 +564,7 @@ pub struct Envelope {
 /// Note that the BlockHeader chains to the previous BlockHeader, and the BlockData hash is embedded
 /// in the BlockHeader.  This makes it natural and obvious that the Data is included in the hash, but
 /// the Metadata is not.
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Block {
     #[prost(message, optional, tag = "1")]
@@ -549,6 +577,7 @@ pub struct Block {
 /// BlockHeader is the element of the block which forms the block chain
 /// The block header is hashed using the configured chain hashing algorithm
 /// over the ASN.1 encoding of the BlockHeader
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BlockHeader {
     /// The position in the blockchain
@@ -561,17 +590,20 @@ pub struct BlockHeader {
     #[prost(bytes = "vec", tag = "3")]
     pub data_hash: ::prost::alloc::vec::Vec<u8>,
 }
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BlockData {
     #[prost(bytes = "vec", repeated, tag = "1")]
     pub data: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
 }
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BlockMetadata {
     #[prost(bytes = "vec", repeated, tag = "1")]
     pub metadata: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
 }
 /// OrdererBlockMetadata defines metadata that is set by the ordering service.
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct OrdererBlockMetadata {
     #[prost(message, optional, tag = "1")]
@@ -580,6 +612,7 @@ pub struct OrdererBlockMetadata {
     pub consenter_metadata: ::prost::alloc::vec::Vec<u8>,
 }
 /// These status codes are intended to resemble selected HTTP status codes
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Status {
@@ -627,6 +660,7 @@ impl Status {
         }
     }
 }
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum HeaderType {
@@ -678,6 +712,7 @@ impl HeaderType {
     }
 }
 /// This enum enlists indexes of the block metadata array
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum BlockMetadataIndex {

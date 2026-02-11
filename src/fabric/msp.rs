@@ -2,6 +2,7 @@
 /// This struct represents an Identity
 /// (with its MSP identifier) to be used
 /// to serialize it and deserialize it
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SerializedIdentity {
     /// The identifier of the associated membership service provider
@@ -15,6 +16,7 @@ pub struct SerializedIdentity {
 /// to be used to serialize it and deserialize it.
 /// The IdemixMSP will first serialize an idemix identity to bytes using
 /// this proto, and then uses these bytes as id_bytes in SerializedIdentity
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SerializedIdemixIdentity {
     /// nym_x is the X-component of the pseudonym elliptic curve point.

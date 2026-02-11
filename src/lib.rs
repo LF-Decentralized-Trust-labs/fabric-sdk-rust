@@ -1,12 +1,16 @@
+/// Proto definitions from hyperledger fabric
+///
+/// See the [documentation](https://github.com/hyperledger/fabric-protos) for further details
 #[allow(dead_code)]
-mod fabric {
-    pub mod common;
+pub mod fabric {
+    pub(crate) mod common;
     pub mod gateway;
-    pub mod msp;
-    pub mod orderer;
+    pub(crate) mod msp;
+    pub(crate) mod orderer;
     pub mod protos;
     #[cfg(feature = "chaincode")]
-    pub mod queryresult;
+    pub(crate) mod queryresult;
+    pub(crate) mod google_protobuf;
 }
 #[cfg(feature = "chaincode")]
 pub mod chaincode;
