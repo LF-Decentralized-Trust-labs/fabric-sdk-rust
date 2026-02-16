@@ -6,7 +6,7 @@ use crate::{
     error::{BuilderError, SubmitError},
     fabric::{
         common::Payload,
-        discovery::discovery_client::DiscoveryClient,
+        discovery::{QueryResult, discovery_client::DiscoveryClient},
         gateway::{
             CommitStatusRequest, CommitStatusResponse, SignedCommitStatusRequest, SubmitRequest,
             gateway_client::GatewayClient,
@@ -231,7 +231,7 @@ impl Client {
     pub async fn submit_discover_call(
         &self,
         prepared_discovery_call: PreparedDiscoveryCall,
-    ) -> Result<(), SubmitError> {
+    ) -> Result<Vec<QueryResult>, SubmitError> {
         if self.tonic_connection.channel.is_none() {
             return Err(SubmitError::NotConnected);
         }
@@ -247,39 +247,7 @@ impl Client {
             .await;
         match response {
             Ok(response) => {
-                let results = response.into_inner().results;
-                for result in results {
-                    if let Some(result) = result.result {
-                        match result {
-                            crate::fabric::discovery::query_result::Result::Error(error) => {
-                                println!("Error: {}", error.content)
-                            }
-                            crate::fabric::discovery::query_result::Result::ConfigResult(
-                                config_result,
-                            ) => println!(
-                                "ConfigResult: \nMsp: {:?}\nOrderes: {:?}",
-                                config_result.msps, config_result.orderers
-                            ),
-                            crate::fabric::discovery::query_result::Result::CcQueryRes(
-                                chaincode_query_result,
-                            ) => {
-                                for query in chaincode_query_result.content {
-                                    println!(
-                                        "CcQueryRes: Chaincode: {}\nEndorsers by Group: {:?}",
-                                        query.chaincode, query.endorsers_by_groups
-                                    );
-                                    for layout in query.layouts {
-                                        println!("Layout: {:?}", layout.quantities_by_group)
-                                    }
-                                }
-                            }
-                            crate::fabric::discovery::query_result::Result::Members(
-                                peer_membership_result,
-                            ) => println!("Members: {:?}", peer_membership_result.peers_by_org),
-                        }
-                    }
-                }
-                Ok(())
+                Ok(response.into_inner().results)
             }
             Err(err) => Err(SubmitError::NodeError(
                 String::from_utf8_lossy(err.details()).into_owned(),
