@@ -39,6 +39,7 @@ pub enum SubmitError {
     NotConnected,
     NodeError(String),
     EmptyRespone,
+    NoPayload,
 }
 
 impl std::error::Error for SubmitError {}
@@ -58,6 +59,7 @@ impl std::fmt::Display for SubmitError {
             SubmitError::EmptyRespone => {
                 write!(f, "Received empty response from node")
             }
+            SubmitError::NoPayload => write!(f, "Answer didn't cointained any payload"),
         }
     }
 }

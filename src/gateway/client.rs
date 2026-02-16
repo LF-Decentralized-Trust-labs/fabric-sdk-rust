@@ -88,7 +88,7 @@ impl Client {
         }
     }
 
-    /// Submits a prepared transaction to the network
+    /// Submits a prepared transaction to the network. Changed will be transmitted to the orderer and the ledger will be affected from the chaincode call.
     pub async fn submit_chaincode_call(
         &self,
         prepared_chaincode_call: PreparedChaincodeCall,
@@ -135,10 +135,7 @@ impl Client {
                                 }
                             }
                             if !payload_found {
-                                panic!(
-                                    "Couldn't find payload in response: {}",
-                                    String::from_utf8_lossy(envelope.payload.as_slice())
-                                )
+                                return Err(SubmitError::NoPayload);
                             }
                         }
                         //Generate random bytes for transaction id and signature header
@@ -165,6 +162,61 @@ impl Client {
                                 String::from_utf8_lossy(err.details()).into_owned(),
                             )),
                         }
+                    }
+                    None => Err(SubmitError::EmptyRespone),
+                }
+            }
+            Err(err) => Err(SubmitError::NodeError(
+                String::from_utf8_lossy(err.details()).into_owned(),
+            )),
+        }
+    }
+
+    /// Executes a chaincode call and does not send it to an orderer, therefore not affecting the ledger. This is good for read-only calls
+    pub async fn peek_chaincode_call(
+        &self,
+        prepared_chaincode_call: PreparedChaincodeCall,
+    ) -> Result<Vec<u8>, SubmitError> {
+        if self.tonic_connection.channel.is_none() {
+            return Err(SubmitError::NotConnected);
+        }
+        let mut gateway_client = GatewayClient::new(
+            self.tonic_connection
+                .channel
+                .as_ref()
+                .expect("Expected value is none.")
+                .clone(),
+        );
+        //First transaction will be endorsed to the network
+        let response = gateway_client
+            .endorse(prepared_chaincode_call.endorse_request)
+            .await;
+        match response {
+            Ok(response) => {
+                match response.into_inner().prepared_transaction {
+                    Some(envelope) => {
+                        //TODO CHECK SIGNATURES
+
+                        if let Ok(payload) = Payload::decode(envelope.payload.as_slice())
+                            && let Ok(transaction) = Transaction::decode(payload.data.as_slice())
+                        {
+                            for action in transaction.actions {
+                                if let Ok(action) =
+                                    ChaincodeActionPayload::decode(action.payload.as_slice())
+                                    && let Some(action) = action.action
+                                    && let Ok(payload) = ProposalResponsePayload::decode(
+                                        action.proposal_response_payload.as_slice(),
+                                    )
+                                    && let Ok(action) =
+                                        ChaincodeAction::decode(payload.extension.as_slice())
+                                    && let Some(response) = action.response
+                                {
+                                    return Ok(response.payload);
+                                }
+                            }
+
+                        }
+                        Err(SubmitError::NoPayload)
                     }
                     None => Err(SubmitError::EmptyRespone),
                 }
