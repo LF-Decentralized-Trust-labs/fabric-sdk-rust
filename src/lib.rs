@@ -2,6 +2,7 @@
 ///
 /// See the [documentation](https://github.com/hyperledger/fabric-protos) for further details
 #[allow(dead_code,clippy::doc_overindented_list_items,clippy::doc_lazy_continuation,clippy::enum_variant_names)]
+#[rustfmt::skip]
 pub mod fabric {
     pub(crate) mod common;
     pub(crate) mod discovery;
