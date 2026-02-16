@@ -27,7 +27,7 @@ mod transaction_test {
                     fs::read(std::env::var("PEER1_KEY_PATH").expect("PEER1_KEY_PATH not set"))
                         .expect("No file found in PEER1_KEY_PATH");
 
-                let identity = identity::IdentityBuilder::from_pm(
+                let identity = identity::IdentityBuilder::from_pem(
                     fs::read(
                         env::var("PEER1_USER1_CERT_PATH")
                             .expect("PEER1_USER1_CERT_PATH environment variable not set"),

@@ -89,7 +89,7 @@ impl Identity {
 }
 
 impl IdentityBuilder {
-    pub fn from_pm(pem_bytes: &[u8]) -> Result<Self, BuilderError> {
+    pub fn from_pem(pem_bytes: &[u8]) -> Result<Self, BuilderError> {
         Ok(IdentityBuilder {
             msp: None,
             cert: tonic::transport::Certificate::from_pem(pem_bytes),

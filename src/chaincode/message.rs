@@ -13,7 +13,7 @@ pub struct MessageBuilder {
 }
 impl MessageBuilder {
     pub fn new(metadata: &Metadata, tx: Sender<ChaincodeMessage>) -> MessageBuilder {
-        let identity = IdentityBuilder::from_pm(&metadata.root_cert.clone().into_bytes())
+        let identity = IdentityBuilder::from_pem(&metadata.root_cert.clone().into_bytes())
             .expect("Invalid certificate")
             .with_msp(metadata.mspid.clone())
             .expect("Invalid msp")
