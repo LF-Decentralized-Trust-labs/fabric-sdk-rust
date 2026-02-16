@@ -5,7 +5,7 @@
 #[rustfmt::skip]
 pub mod fabric {
     pub(crate) mod common;
-    pub(crate) mod discovery;
+    pub mod discovery;
     pub mod gateway;
     pub(crate) mod google_protobuf;
     pub(crate) mod gossip;
