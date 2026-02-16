@@ -22,14 +22,14 @@ impl DiscoveryCallBuilder {
         Ok(self)
     }
     /// Builds a PreparedDiscoveryCall which can be passed to [`submit_discover_call`](submit_discover_call)
-    pub fn build(self) -> Result<PreparedDiscoveryCall, BuilderError> {
+    pub fn build(&self) -> Result<PreparedDiscoveryCall, BuilderError> {
         let authentication = AuthInfo {
             client_identity: self.identity.get_serialized_identity().encode_to_vec(),
             client_tls_cert_hash: self.identity.generate_tls_cert_hash(),
         };
         let request = Request {
             authentication: Some(authentication),
-            queries: self.queries,
+            queries: self.queries.clone(),
         }
         .encode_to_vec();
         let request = SignedRequest {
