@@ -1,14 +1,10 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
-    chaincode::{
-        Callable, Metadata, context::Context, message::MessageBuilder, router::Router
-    },
+    chaincode::{Callable, Metadata, context::Context, message::MessageBuilder, router::Router},
     fabric::{
         common::Status,
-        protos::{
-            ChaincodeId, ChaincodeInput, ChaincodeMessage, Response, chaincode_message,
-        },
+        protos::{ChaincodeId, ChaincodeInput, ChaincodeMessage, Response, chaincode_message},
     },
 };
 use futures_channel::mpsc::Receiver;
@@ -34,11 +30,13 @@ impl MessageHandler {
     ) -> MessageHandler {
         let (tx, rx) = futures_channel::mpsc::channel::<ChaincodeMessage>(100);
 
-        let (transaction_queue_sender,transaction_queue_receiver) = futures_channel::mpsc::channel(100);
-        let (peer_response_sender,peer_response_receiver) = futures_channel::mpsc::channel(100);
+        let (transaction_queue_sender, transaction_queue_receiver) =
+            futures_channel::mpsc::channel(100);
+        let (peer_response_sender, peer_response_receiver) = futures_channel::mpsc::channel(100);
 
-        let router = Router::new(metadata,transaction_queue_sender,peer_response_sender,rx).await;
-        tokio::spawn(async move{
+        let router =
+            Router::new(metadata, transaction_queue_sender, peer_response_sender, rx).await;
+        tokio::spawn(async move {
             eprintln!("[Router] Starting router");
             router.run().await;
             eprintln!("[Router] Router stopped");
@@ -97,14 +95,17 @@ impl MessageHandler {
                     let response = match self.contracts.get(contract_name) {
                         Some(contract) => match contract.get(*function_name) {
                             Some(function) => {
-                                match function.call(
-                                    Context::new(self.message_builder.clone(), message.clone(), self.peer_response_queue.clone()),
-                                    arguments
-                                        .iter()
-                                        .skip(1)
-                                        .cloned()
-                                        .collect::<Vec<String>>(),
-                                ).await {
+                                match function
+                                    .call(
+                                        Context::new(
+                                            self.message_builder.clone(),
+                                            message.clone(),
+                                            self.peer_response_queue.clone(),
+                                        ),
+                                        arguments.iter().skip(1).cloned().collect::<Vec<String>>(),
+                                    )
+                                    .await
+                                {
                                     Ok(result) => match result {
                                         Ok(message) => Response {
                                             status: Status::Success.into(),
@@ -118,14 +119,14 @@ impl MessageHandler {
                                             ),
                                             payload: vec![],
                                         },
-                                    }
+                                    },
                                     Err(err) => Response {
                                         status: Status::InternalServerError.into(),
                                         message: format!(
                                             "An error occurred during the exection of the chaincode function: {err}"
                                         ),
                                         payload: vec![],
-                                    }
+                                    },
                                 }
                             }
                             None => Response {
@@ -147,7 +148,9 @@ impl MessageHandler {
                         },
                     };
 
-                    self.message_builder.lock().await
+                    self.message_builder
+                        .lock()
+                        .await
                         .respond(
                             chaincode_message::Type::Completed,
                             response.encode_to_vec(),
@@ -158,13 +161,14 @@ impl MessageHandler {
                 Err(err) => {
                     let error_text = format!("Invalid chaincode input; {}", err);
                     eprintln!("[MessageHandler] {}", error_text);
-                    self.message_builder.lock().await
-                        .send(
-                            chaincode_message::Type::Error,
-                            error_text.encode_to_vec(),
-                        )
+                    self.message_builder
+                        .lock()
+                        .await
+                        .send(chaincode_message::Type::Error, error_text.encode_to_vec())
                         .await;
-                    self.message_builder.lock().await
+                    self.message_builder
+                        .lock()
+                        .await
                         .send(
                             chaincode_message::Type::Response,
                             error_text.encode_to_vec(),

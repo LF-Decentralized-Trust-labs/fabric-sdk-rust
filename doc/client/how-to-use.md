@@ -2,7 +2,7 @@
 
 The crate can be used via crates.io:
 ```toml
-fabric-sdk = "0.3.0"
+fabric-sdk = "0.4.0"
 ```
 
 Here is an simple code example how to use the library:
@@ -20,6 +20,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let identity = IdentityBuilder::from_pem(pem_bytes)
         .with_msp("Org1MSP")?
+        .with_private_key(msp_key_bytes)?
         .build()?;
 
     let mut client = ClientBuilder::new()
@@ -27,7 +28,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .with_tls(tlsca_bytes)?
         .with_scheme("https")?
         .with_authority("localhost:7051")?
-        .with_signer(Signer::new(msp_key_bytes))?
         .build()?;
     client.connect().await?;
 

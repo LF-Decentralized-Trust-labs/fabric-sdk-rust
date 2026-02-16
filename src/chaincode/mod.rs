@@ -29,7 +29,11 @@ pub struct Metadata {
 }
 
 pub trait Callable {
-    fn call(&self, ctx: Context, args: Vec<String>) -> tokio::task::JoinHandle<Result<String, String>>;
+    fn call(
+        &self,
+        ctx: Context,
+        args: Vec<String>,
+    ) -> tokio::task::JoinHandle<Result<String, String>>;
     fn name(&self) -> &str;
 }
 

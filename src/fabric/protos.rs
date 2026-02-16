@@ -1658,3 +1658,125 @@ pub mod chaincode_server {
         const NAME: &'static str = SERVICE_NAME;
     }
 }
+/// ApplicationPolicy captures the diffenrent policy types that
+/// are set and evaluted at the application level.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ApplicationPolicy {
+    #[prost(oneof = "application_policy::Type", tags = "1, 2")]
+    pub r#type: ::core::option::Option<application_policy::Type>,
+}
+/// Nested message and enum types in `ApplicationPolicy`.
+pub mod application_policy {
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Type {
+        /// SignaturePolicy type is used if the policy is specified as
+        /// a combination (using threshold gates) of signatures from MSP
+        /// principals
+        #[prost(message, tag = "1")]
+        SignaturePolicy(super::super::common::SignaturePolicyEnvelope),
+        /// ChannelConfigPolicyReference is used when the policy is
+        /// specified as a string that references a policy defined in
+        /// the configuration of the channel
+        #[prost(string, tag = "2")]
+        ChannelConfigPolicyReference(::prost::alloc::string::String),
+    }
+}
+/// CollectionConfigPackage represents an array of CollectionConfig
+/// messages; the extra struct is required because repeated oneof is
+/// forbidden by the protobuf syntax
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectionConfigPackage {
+    #[prost(message, repeated, tag = "1")]
+    pub config: ::prost::alloc::vec::Vec<CollectionConfig>,
+}
+/// CollectionConfig defines the configuration of a collection object;
+/// it currently contains a single, static type.
+/// Dynamic collections are deferred.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectionConfig {
+    #[prost(oneof = "collection_config::Payload", tags = "1")]
+    pub payload: ::core::option::Option<collection_config::Payload>,
+}
+/// Nested message and enum types in `CollectionConfig`.
+pub mod collection_config {
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Payload {
+        #[prost(message, tag = "1")]
+        StaticCollectionConfig(super::StaticCollectionConfig),
+    }
+}
+/// StaticCollectionConfig constitutes the configuration parameters of a
+/// static collection object. Static collections are collections that are
+/// known at chaincode instantiation time, and that cannot be changed.
+/// Dynamic collections are deferred.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StaticCollectionConfig {
+    /// the name of the collection inside the denoted chaincode
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    /// a reference to a policy residing / managed in the config block
+    /// to define which orgs have access to this collection’s private data
+    #[prost(message, optional, tag = "2")]
+    pub member_orgs_policy: ::core::option::Option<CollectionPolicyConfig>,
+    /// The minimum number of peers private data will be sent to upon
+    /// endorsement. The endorsement would fail if dissemination to at least
+    /// this number of peers is not achieved.
+    #[prost(int32, tag = "3")]
+    pub required_peer_count: i32,
+    /// The maximum number of peers that private data will be sent to
+    /// upon endorsement. This number has to be bigger than required_peer_count.
+    #[prost(int32, tag = "4")]
+    pub maximum_peer_count: i32,
+    /// The number of blocks after which the collection data expires.
+    /// For instance if the value is set to 10, a key last modified by block number 100
+    /// will be purged at block number 111. A zero value is treated same as MaxUint64
+    #[prost(uint64, tag = "5")]
+    pub block_to_live: u64,
+    /// The member only read access denotes whether only collection member clients
+    /// can read the private data (if set to true), or even non members can
+    /// read the data (if set to false, for example if you want to implement more granular
+    /// access logic in the chaincode)
+    #[prost(bool, tag = "6")]
+    pub member_only_read: bool,
+    /// The member only write access denotes whether only collection member clients
+    /// can write the private data (if set to true), or even non members can
+    /// write the data (if set to false, for example if you want to implement more granular
+    /// access logic in the chaincode)
+    #[prost(bool, tag = "7")]
+    pub member_only_write: bool,
+    /// a reference to a policy residing / managed in the config block
+    /// to define the endorsement policy for this collection
+    #[prost(message, optional, tag = "8")]
+    pub endorsement_policy: ::core::option::Option<ApplicationPolicy>,
+}
+/// Collection policy configuration. Initially, the configuration can only
+/// contain a SignaturePolicy. In the future, the SignaturePolicy may be a
+/// more general Policy. Instead of containing the actual policy, the
+/// configuration may in the future contain a string reference to a policy.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectionPolicyConfig {
+    #[prost(oneof = "collection_policy_config::Payload", tags = "1")]
+    pub payload: ::core::option::Option<collection_policy_config::Payload>,
+}
+/// Nested message and enum types in `CollectionPolicyConfig`.
+pub mod collection_policy_config {
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Payload {
+        /// Initially, only a signature policy is supported.
+        ///
+        /// Later, the SignaturePolicy will be replaced by a Policy.
+        ///         Policy policy = 1;
+        /// A reference to a Policy is planned to be added later.
+        ///         string reference = 2;
+        #[prost(message, tag = "1")]
+        SignaturePolicy(super::super::common::SignaturePolicyEnvelope),
+    }
+}

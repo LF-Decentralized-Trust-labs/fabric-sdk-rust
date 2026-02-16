@@ -6,19 +6,23 @@ use crate::{
     error::{BuilderError, SubmitError},
     fabric::{
         common::Payload,
-        gateway::{CommitStatusRequest, CommitStatusResponse, SignedCommitStatusRequest, SubmitRequest, gateway_client::GatewayClient},
-        msp::SerializedIdentity,
+        discovery::discovery_client::DiscoveryClient,
+        gateway::{
+            CommitStatusRequest, CommitStatusResponse, SignedCommitStatusRequest, SubmitRequest,
+            gateway_client::GatewayClient,
+        },
         protos::{ChaincodeAction, ChaincodeActionPayload, ProposalResponsePayload, Transaction},
     },
-    signer::Signer,
-    transaction::{
-        PreparedTransaction, TransaktionBuilder, generate_nonce, generate_transaction_id,
+    gateway::{
+        chaincode::{ChaincodeCallBuilder, PreparedChaincodeCall},
+        discovery::{DiscoveryCallBuilder, PreparedDiscoveryCall},
     },
+    identity::Identity,
+    transaction::{generate_nonce, generate_transaction_id},
 };
 
 pub struct Client {
-    identity: SerializedIdentity,
-    signer: Signer,
+    identity: Identity,
     tonic_connection: TonicConnection,
 }
 
@@ -62,10 +66,9 @@ impl Client {
     ///    Err(err) => println!("{}", err),
     ///  }
     /// ```
-    pub fn get_transaction_builder(&self) -> TransaktionBuilder {
-        TransaktionBuilder {
+    pub fn get_chaincode_call_builder(&self) -> ChaincodeCallBuilder {
+        ChaincodeCallBuilder {
             identity: self.identity.clone(),
-            signer: self.signer.clone(),
             channel_name: None,
             chaincode_id: None,
             contract_id: None,
@@ -78,10 +81,17 @@ impl Client {
         }
     }
 
+    pub fn get_discovery_call_builder(&self) -> DiscoveryCallBuilder {
+        DiscoveryCallBuilder {
+            identity: self.identity.clone(),
+            queries: vec![],
+        }
+    }
+
     /// Submits a prepared transaction to the network
-    pub async fn submit_transaction(
+    pub async fn submit_chaincode_call(
         &self,
-        prepared_transaction: PreparedTransaction,
+        prepared_chaincode_call: PreparedChaincodeCall,
     ) -> Result<Vec<u8>, SubmitError> {
         if self.tonic_connection.channel.is_none() {
             return Err(SubmitError::NotConnected);
@@ -95,7 +105,7 @@ impl Client {
         );
         //First transaction will be endorsed to the network
         let response = gateway_client
-            .endorse(prepared_transaction.endorse_request)
+            .endorse(prepared_chaincode_call.endorse_request)
             .await;
         match response {
             Ok(response) => {
@@ -124,23 +134,29 @@ impl Client {
                                     payload_found = true;
                                 }
                             }
-                            if !payload_found{
-                                panic!("Couldn't find payload in response: {}",String::from_utf8_lossy(envelope.payload.as_slice()))
+                            if !payload_found {
+                                panic!(
+                                    "Couldn't find payload in response: {}",
+                                    String::from_utf8_lossy(envelope.payload.as_slice())
+                                )
                             }
                         }
                         //Generate random bytes for transaction id and signature header
                         let nonce = generate_nonce();
 
-                        envelope.signature = self.signer.sign_message(&envelope.payload);
+                        envelope.signature = self.identity.sign_message(&envelope.payload);
 
                         //Create transaction id
                         let transaction_id = generate_transaction_id(
                             &nonce,
-                            self.identity.encode_to_vec().as_slice(),
+                            self.identity
+                                .get_certificate_bytes()
+                                .encode_to_vec()
+                                .as_slice(),
                         );
                         let submit_request = SubmitRequest {
                             transaction_id: transaction_id.clone(),
-                            channel_id: prepared_transaction.channel_name.clone(),
+                            channel_id: prepared_chaincode_call.channel_name.clone(),
                             prepared_transaction: Some(envelope),
                         };
                         match gateway_client.submit(submit_request).await {
@@ -159,17 +175,81 @@ impl Client {
         }
     }
 
-    /// Checks for the commit status of a given transaction
-    ///
-    /// This method will run until the commit will occur if it hasn’t already committed. So only run this immidentialy after [`submit()`](submit).
-    pub async fn commit_status(&self, transaction_id: String, channel_id: String) -> Result<CommitStatusResponse, SubmitError>{
+    /// Discovery defines a service that serves information about the fabric network like which peers, orderers, chaincodes, etc.
+    pub async fn submit_discover_call(
+        &self,
+        prepared_discovery_call: PreparedDiscoveryCall,
+    ) -> Result<(), SubmitError> {
         if self.tonic_connection.channel.is_none() {
             return Err(SubmitError::NotConnected);
         }
-        let request = CommitStatusRequest{
+        let mut discovery_client = DiscoveryClient::new(
+            self.tonic_connection
+                .channel
+                .as_ref()
+                .expect("Expected value is none.")
+                .clone(),
+        );
+        let response = discovery_client
+            .discover(prepared_discovery_call.request)
+            .await;
+        match response {
+            Ok(response) => {
+                let results = response.into_inner().results;
+                for result in results {
+                    if let Some(result) = result.result {
+                        match result {
+                            crate::fabric::discovery::query_result::Result::Error(error) => {
+                                println!("Error: {}", error.content)
+                            }
+                            crate::fabric::discovery::query_result::Result::ConfigResult(
+                                config_result,
+                            ) => println!(
+                                "ConfigResult: \nMsp: {:?}\nOrderes: {:?}",
+                                config_result.msps, config_result.orderers
+                            ),
+                            crate::fabric::discovery::query_result::Result::CcQueryRes(
+                                chaincode_query_result,
+                            ) => {
+                                for query in chaincode_query_result.content {
+                                    println!(
+                                        "CcQueryRes: Chaincode: {}\nEndorsers by Group: {:?}",
+                                        query.chaincode, query.endorsers_by_groups
+                                    );
+                                    for layout in query.layouts {
+                                        println!("Layout: {:?}", layout.quantities_by_group)
+                                    }
+                                }
+                            }
+                            crate::fabric::discovery::query_result::Result::Members(
+                                peer_membership_result,
+                            ) => println!("Members: {:?}", peer_membership_result.peers_by_org),
+                        }
+                    }
+                }
+                Ok(())
+            }
+            Err(err) => Err(SubmitError::NodeError(
+                String::from_utf8_lossy(err.details()).into_owned(),
+            )),
+        }
+    }
+
+    /// Checks for the commit status of a given transaction
+    ///
+    /// This method will run until the commit will occur if it hasn’t already committed. So only run this immidentialy after [`submit()`](submit).
+    pub async fn commit_status(
+        &self,
+        transaction_id: String,
+        channel_id: String,
+    ) -> Result<CommitStatusResponse, SubmitError> {
+        if self.tonic_connection.channel.is_none() {
+            return Err(SubmitError::NotConnected);
+        }
+        let request = CommitStatusRequest {
             transaction_id,
             channel_id,
-            identity: self.identity.encode_to_vec(),
+            identity: self.identity.get_serialized_identity().encode_to_vec(),
         };
         let mut gateway_client = GatewayClient::new(
             self.tonic_connection
@@ -178,15 +258,13 @@ impl Client {
                 .expect("Expected value is none.")
                 .clone(),
         );
-        let request = SignedCommitStatusRequest{
+        let request = SignedCommitStatusRequest {
             request: request.encode_to_vec(),
-            signature: self.signer.sign_message(&request.encode_to_vec()),
+            signature: self.identity.sign_message(&request.encode_to_vec()),
         };
         let response = gateway_client.commit_status(request).await;
         match response {
-            Ok(response) => {
-                Ok(response.into_inner())
-            },
+            Ok(response) => Ok(response.into_inner()),
             Err(err) => Err(SubmitError::NodeError(
                 String::from_utf8_lossy(err.details()).into_owned(),
             )),
@@ -215,15 +293,13 @@ impl Client {
 ///    .with_tls(tlsca_bytes)?
 ///    .with_sheme("https")?
 ///    .with_authority("localhost:7051")?
-///    .with_signer(Signer::new(msp_key_bytes))?
 ///    .build()?;
 ///  client.connect().await?;
 /// ```
 #[derive(Default)]
 pub struct ClientBuilder {
-    identity: Option<SerializedIdentity>,
+    identity: Option<Identity>,
     tls: Option<Vec<u8>>,
-    signer: Option<Signer>,
     scheme: Option<String>,
     authority: Option<String>,
 }
@@ -244,21 +320,8 @@ impl ClientBuilder {
     ///
     ///let mut client = ClientBuilder::new()
     ///    .with_identity(identity)?;
-    pub fn with_identity(
-        mut self,
-        identity: SerializedIdentity,
-    ) -> Result<ClientBuilder, BuilderError> {
+    pub fn with_identity(mut self, identity: Identity) -> Result<ClientBuilder, BuilderError> {
         self.identity = Some(identity);
-        Ok(self)
-    }
-    /// Signer to sign the transactions
-    /// # Example
-    /// ```rust
-    ///  let mut client = ClientBuilder::new()
-    ///    .with_signer(Signer::new(msp_key_bytes))?
-    /// ```
-    pub fn with_signer(mut self, signer: Signer) -> Result<ClientBuilder, BuilderError> {
-        self.signer = Some(signer);
         Ok(self)
     }
 
@@ -299,10 +362,6 @@ impl ClientBuilder {
             Some(identity) => identity,
             None => return Err(BuilderError::MissingParameter("identity".into())),
         };
-        let signer = match self.signer {
-            Some(signer) => signer,
-            None => return Err(BuilderError::MissingParameter("signer".into())),
-        };
         let tls = match self.tls {
             Some(tls) => tls,
             None => return Err(BuilderError::MissingParameter("tls".into())),
@@ -335,7 +394,6 @@ impl ClientBuilder {
         };
         Ok(Client {
             identity,
-            signer,
             tonic_connection,
         })
     }

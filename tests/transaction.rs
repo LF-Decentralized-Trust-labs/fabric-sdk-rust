@@ -2,7 +2,7 @@
 mod transaction_test {
     use std::{env, fs};
 
-    use fabric_sdk::{gateway::client, identity, signer};
+    use fabric_sdk::{gateway::client, identity};
 
     #[test]
     fn test_transaction() {
@@ -27,7 +27,7 @@ mod transaction_test {
                     fs::read(std::env::var("PEER1_KEY_PATH").expect("PEER1_KEY_PATH not set"))
                         .expect("No file found in PEER1_KEY_PATH");
 
-                let identity = identity::IdentityBuilder::from_pem(
+                let identity = identity::IdentityBuilder::from_pm(
                     fs::read(
                         env::var("PEER1_USER1_CERT_PATH")
                             .expect("PEER1_USER1_CERT_PATH environment variable not set"),
@@ -35,7 +35,10 @@ mod transaction_test {
                     .expect("Couldn't read file")
                     .as_slice(),
                 )
+                .unwrap()
                 .with_msp(env::var("MSP_ID").expect("MSP_ID environment variable not set"))
+                .unwrap()
+                .with_private_key(pkey)
                 .unwrap()
                 .build()
                 .unwrap();
@@ -55,13 +58,11 @@ mod transaction_test {
                     .unwrap()
                     .with_authority("localhost:7051")
                     .unwrap()
-                    .with_signer(signer::Signer::new(pkey))
-                    .unwrap()
                     .build()
                     .unwrap();
                 client.connect().await.unwrap();
 
-                let mut tx_builder = client.get_transaction_builder();
+                let mut tx_builder = client.get_chaincode_call_builder();
                 tx_builder
                     .with_channel_name(channel_name)
                     .unwrap()
@@ -74,7 +75,7 @@ mod transaction_test {
                 }
                 match tx_builder.build() {
                     Ok(prepared_transaction) => {
-                        match client.submit_transaction(prepared_transaction).await {
+                        match client.submit_chaincode_call(prepared_transaction).await {
                             Ok(result) => {
                                 println!("{}", String::from_utf8_lossy(result.as_slice()));
                             }
