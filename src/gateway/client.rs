@@ -50,14 +50,14 @@ impl Client {
     ///
     /// ```rust
     ///  let tx_builder = client
-    ///    .get_transaction_builder()
+    ///    .get_chaincode_builder()
     ///    .with_channel_name("mychannel")?
     ///    .with_chaincode_id("basic")?
     ///    .with_function_name("CreateAsset")?
     ///    .with_function_args(["assetCustom", "orange", "10", "Frank", "600"])?
     ///    .build();
     ///  match tx_builder {
-    ///    Ok(prepared_transaction) => match client.submit_transaction(prepared_transaction).await {
+    ///    Ok(prepared_transaction) => match client.submit_chaincode_call(prepared_transaction).await {
     ///        Ok(result) => {
     ///            println!("{}", String::from_utf8_lossy(result.as_slice()));
     ///        }
