@@ -8,23 +8,28 @@ pub mod fabric {
     pub mod discovery;
     pub mod gateway;
     pub(crate) mod google_protobuf;
-    pub(crate) mod gossip;
+    pub mod gossip;
     pub(crate) mod msp;
     pub(crate) mod orderer;
     pub mod protos;
     #[cfg(feature = "chaincode")]
     pub(crate) mod queryresult;
 }
+
 #[cfg(feature = "chaincode")]
 pub mod chaincode;
+
+#[cfg(feature = "client")]
 pub mod error;
 #[cfg(feature = "client")]
 pub mod gateway;
+#[cfg(feature = "client")]
 pub mod identity;
-pub mod signer;
+#[cfg(feature = "client")]
 #[allow(dead_code)]
 pub(crate) mod transaction;
 
+#[cfg(feature = "client")]
 pub mod prelude {
     #[cfg(feature = "chaincode")]
     pub use crate::chaincode::context::Context;

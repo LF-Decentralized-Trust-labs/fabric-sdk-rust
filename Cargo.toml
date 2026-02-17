@@ -19,12 +19,12 @@ futures-util = {version = "0.3.31", optional=true}
 fabric-sdk-derives = { version = "0.1.0", path = "fabric-sdk-derives", optional = true }
 
 #rustls = { version = "0.23.23", features = ["ring"] } # Makes problems when compiling static
-openssl = { version = "0.10.75", features = ["vendored"] }
-hex = "0.4.3"
-ecdsa = {version="0.16.9", features=["der","arithmetic"]}
-p256 = "0.13.2"
-futures-channel = "0.3.31"
-tonic = { version = "0.14.2", features = ["tls-aws-lc"] }
+openssl = { version = "0.10.75", features = ["vendored"], optional = true  } # Makes problems when compiling for wasm
+hex = {version = "0.4.3", optional = true}
+ecdsa = {version = "0.16.9", features=["der","arithmetic"], optional = true}
+p256 = {version = "0.13.2", optional = true}
+futures-channel = {version="0.3.31",optional = true}
+tonic = { version = "0.14.2", default-features = false, features = ["codegen"] }
 tonic-prost = "0.14.2"
 prost = "0.14.1"
 prost-types = "0.14.1"
@@ -43,5 +43,26 @@ doctest = false
 
 [features]
 default = ["client"]
-client = []
-chaincode = ["dep:tokio","dep:futures-util","dep:fabric-sdk-derives"]
+client = [
+    "dep:openssl",
+    "dep:tokio",
+    "tonic/tls-aws-lc",
+    "tonic/transport",
+    "tonic/router",
+    "dep:futures-channel",
+    "dep:p256",
+    "dep:ecdsa",
+    "dep:hex"
+]
+chaincode = [
+    "dep:tokio",
+    "dep:futures-util",
+    "dep:fabric-sdk-derives",
+    "tonic/tls-aws-lc",
+    "tonic/transport",
+    "tonic/router",
+    "dep:futures-channel",
+    "dep:p256",
+    "dep:ecdsa",
+    "dep:hex"
+]
