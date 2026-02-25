@@ -3,24 +3,28 @@ use futures_channel::mpsc::Sender;
 use crate::{
     chaincode::Metadata,
     fabric::protos::{ChaincodeMessage, chaincode_message},
-    signer::Signer,
-    transaction::TransaktionBuilder,
+    gateway::chaincode::ChaincodeCallBuilder,
+    identity::IdentityBuilder,
 };
 
 pub struct MessageBuilder {
     tx: Sender<ChaincodeMessage>,
-    transaktion_builder: crate::transaction::TransaktionBuilder,
+    chaincode_call_builder: crate::gateway::chaincode::ChaincodeCallBuilder,
 }
 impl MessageBuilder {
     pub fn new(metadata: &Metadata, tx: Sender<ChaincodeMessage>) -> MessageBuilder {
+        let identity = IdentityBuilder::from_pem(&metadata.root_cert.clone().into_bytes())
+            .expect("Invalid certificate")
+            .with_msp(metadata.mspid.clone())
+            .expect("Invalid msp")
+            .with_private_key(metadata.client_key.as_bytes().to_vec())
+            .expect("Invalid private key")
+            .build()
+            .expect("Could not build identity with provided data");
         MessageBuilder {
             tx,
-            transaktion_builder: TransaktionBuilder {
-                identity: crate::fabric::msp::SerializedIdentity {
-                    mspid: metadata.mspid.clone(),
-                    id_bytes: metadata.root_cert.clone().into_bytes(),
-                },
-                signer: Signer::new(metadata.client_key.as_bytes()),
+            chaincode_call_builder: ChaincodeCallBuilder {
+                identity,
                 channel_name: None,
                 chaincode_id: Some(metadata.chaincode_id.clone()),
                 contract_id: None,
@@ -36,7 +40,7 @@ impl MessageBuilder {
 
     pub async fn send(&mut self, r#type: chaincode_message::Type, payload: Vec<u8>) {
         let message = self
-            .transaktion_builder
+            .chaincode_call_builder
             .generate_chaincode_message(r#type, payload)
             .expect("Failed creating message");
         self.tx.start_send(message).unwrap();
@@ -57,7 +61,7 @@ impl MessageBuilder {
             channel_id: message.channel_id,
         };
         self.tx.start_send(message).unwrap();
-        self.transaktion_builder.with_transaction_id(None);
-        self.transaktion_builder.with_proposal(None);
+        self.chaincode_call_builder.with_transaction_id(None);
+        self.chaincode_call_builder.with_proposal(None);
     }
 }

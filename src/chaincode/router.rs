@@ -1,10 +1,16 @@
-use futures_channel::mpsc::{Sender,Receiver};
-use tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity, Uri};
+use futures_channel::mpsc::{Receiver, Sender};
 use futures_util::StreamExt;
+use tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity, Uri};
 
-use crate::{chaincode::Metadata, fabric::protos::{ChaincodeMessage, chaincode_message, chaincode_support_client::{self, ChaincodeSupportClient}}};
+use crate::{
+    chaincode::Metadata,
+    fabric::protos::{
+        ChaincodeMessage, chaincode_message,
+        chaincode_support_client::{self, ChaincodeSupportClient},
+    },
+};
 
-pub struct Router{
+pub struct Router {
     ///The stream for messages from the peer to the contract
     rx: Receiver<ChaincodeMessage>,
     ///The client connecting to the peer. It will hold the connection as long as this contract runs
@@ -12,12 +18,12 @@ pub struct Router{
     transaction_queue: Sender<ChaincodeMessage>,
     peer_response_queue: Sender<ChaincodeMessage>,
 }
-impl Router{
+impl Router {
     pub async fn new(
         metadata: &Metadata,
         transaction_queue: Sender<ChaincodeMessage>,
         peer_response_queue: Sender<ChaincodeMessage>,
-        rx: Receiver<ChaincodeMessage>
+        rx: Receiver<ChaincodeMessage>,
     ) -> Self {
         let root_cert = Certificate::from_pem(metadata.root_cert.as_bytes());
 
@@ -42,9 +48,14 @@ impl Router{
 
         let client = chaincode_support_client::ChaincodeSupportClient::new(channel.clone());
 
-        Router { rx, client, transaction_queue, peer_response_queue }
+        Router {
+            rx,
+            client,
+            transaction_queue,
+            peer_response_queue,
+        }
     }
-    pub async fn run(mut self){
+    pub async fn run(mut self) {
         let mut res = self
             .client
             .register(self.rx)
@@ -69,14 +80,14 @@ impl Router{
                     }
                     Ok(chaincode_message::Type::Transaction) => {
                         eprintln!("[Router] Received transaction {}", message.txid);
-                        if let Err(err) = self.transaction_queue.start_send(message){
-                            eprintln!("[Router] Error seinding transaction into queue: {}",err);
+                        if let Err(err) = self.transaction_queue.start_send(message) {
+                            eprintln!("[Router] Error seinding transaction into queue: {}", err);
                         }
                     }
                     Ok(chaincode_message::Type::Response) => {
                         eprintln!("[Router] Received response for {}", message.txid);
-                        if let Err(err) = self.peer_response_queue.start_send(message){
-                            eprintln!("[Router] Error seinding response into queue: {}",err);
+                        if let Err(err) = self.peer_response_queue.start_send(message) {
+                            eprintln!("[Router] Error seinding response into queue: {}", err);
                         }
                     }
                     _ => {
@@ -94,7 +105,8 @@ impl Router{
                     }
                 },
                 Err(err) => {
-                    let error_text = format!("[Router] Error receiving messages stream: Status {}", err);
+                    let error_text =
+                        format!("[Router] Error receiving messages stream: Status {}", err);
                     eprintln!("{}", error_text);
                 }
             }
