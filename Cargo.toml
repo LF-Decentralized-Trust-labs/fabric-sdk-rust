@@ -55,6 +55,7 @@ client = [
     "dep:hex"
 ]
 chaincode = [
+    "dep:openssl",
     "dep:tokio",
     "dep:futures-util",
     "dep:fabric-sdk-derives",
