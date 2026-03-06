@@ -1,4 +1,5 @@
-use openssl::{ec::EcKey, pkey::Private};
+use ecdsa::{SigningKey, elliptic_curve::pkcs8::DecodePrivateKey, signature::{Signer, SignerMut}};
+use p256::NistP256;
 use prost::Message;
 
 use crate::{
@@ -23,7 +24,7 @@ use crate::{
 pub struct IdentityBuilder {
     msp: Option<String>,
     cert: tonic::transport::Certificate,
-    pkey: Vec<u8>,
+    pkey: String,
 }
 
 /// An Identiy representation which is able to sign messages
@@ -31,7 +32,7 @@ pub struct IdentityBuilder {
 pub struct Identity {
     msp: String,
     cert: tonic::transport::Certificate,
-    pkey: EcKey<Private>,
+    pkey: SigningKey<NistP256>,
 }
 
 impl Identity {
@@ -56,7 +57,8 @@ impl Identity {
     }
 
     /// Signs a given message using an ECDSA key derived from PEM bytes.
-    /// Ring does not support private-key-only pkcs8 files, which is being used by hyperledger's test network. This is why openssl is being used here and in the project generally.
+    /// Ring does not support private-key-only pkcs8 files, which is being used by hyperledger's test network.
+    /// Hyperledger uses a normalized s signature. Openssl does not support it so we use ecdsa implementation from RustCrypto https://github.com/RustCrypto/signatures/tree/master/ecdsa which is not verified to be secure
     /// # Arguments
     /// * `message` - A byte slice representing the message to be signed.
     /// * `pem_bytes` - A byte slice representing the private key in PEM format.
@@ -66,25 +68,11 @@ impl Identity {
     pub fn sign_message(&self, message: &[u8]) -> Vec<u8> {
         use p256::pkcs8::der::Encode;
 
-        let mut hasher = openssl::sha::Sha256::new();
-        hasher.update(message);
-        let hash = hasher.finish();
-
-        let signature = openssl::ecdsa::EcdsaSig::sign(hash.as_slice(), &self.pkey).unwrap();
-
-        //Hyperledger uses a normalized s signature. Openssl does not support it so we use ecdsa implementation from RustCrypto https://github.com/RustCrypto/signatures/tree/master/ecdsa
-        // which is not verified to be secure
-        let signature: ecdsa::Signature<p256::NistP256> =
-            ecdsa::Signature::from_der(signature.to_der().unwrap().as_slice()).unwrap();
+        let signature: ecdsa::Signature<p256::NistP256> = self.pkey.sign(message);
 
         let mut v = vec![];
-        if let Some(signature) = signature.normalize_s() {
-            signature.to_der().encode_to_vec(&mut v).unwrap();
-            v
-        } else {
-            signature.to_der().encode_to_vec(&mut v).unwrap();
-            v
-        }
+        signature.normalize_s().to_der().encode_to_vec(&mut v).expect("Couldn't encode der to vec");
+        v
     }
 }
 
@@ -93,7 +81,7 @@ impl IdentityBuilder {
         Ok(IdentityBuilder {
             msp: None,
             cert: tonic::transport::Certificate::from_pem(pem_bytes),
-            pkey: vec![],
+            pkey: String::default(),
         })
     }
 
@@ -106,7 +94,7 @@ impl IdentityBuilder {
         Ok(self)
     }
 
-    pub fn with_private_key(mut self, pkey: Vec<u8>) -> Result<Self, BuilderError> {
+    pub fn with_private_key(mut self, pkey: String) -> Result<Self, BuilderError> {
         self.pkey = pkey;
         Ok(self)
     }
@@ -119,12 +107,12 @@ impl IdentityBuilder {
             return Err(BuilderError::MissingParameter("pkey".into()));
         }
 
-        let pkey = openssl::ec::EcKey::private_key_from_pem(&self.pkey).unwrap();
+        let signing_key = ecdsa::SigningKey::from_pkcs8_pem(&self.pkey.replace("EC ", "")).expect("Invalid signing key");
 
         Ok(Identity {
             msp: self.msp.unwrap(),
             cert: self.cert,
-            pkey,
+            pkey: signing_key,
         })
     }
 }

@@ -17,7 +17,7 @@ impl MessageBuilder {
             .expect("Invalid certificate")
             .with_msp(metadata.mspid.clone())
             .expect("Invalid msp")
-            .with_private_key(metadata.client_key.as_bytes().to_vec())
+            .with_private_key(metadata.client_key.clone())
             .expect("Invalid private key")
             .build()
             .expect("Could not build identity with provided data");
