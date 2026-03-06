@@ -1,4 +1,4 @@
-use ecdsa::{SigningKey, elliptic_curve::pkcs8::DecodePrivateKey, signature::{Signer, SignerMut}};
+use ecdsa::{SigningKey, elliptic_curve::pkcs8::DecodePrivateKey, signature::Signer};
 use p256::NistP256;
 use prost::Message;
 
@@ -71,7 +71,11 @@ impl Identity {
         let signature: ecdsa::Signature<p256::NistP256> = self.pkey.sign(message);
 
         let mut v = vec![];
-        signature.normalize_s().to_der().encode_to_vec(&mut v).expect("Couldn't encode der to vec");
+        signature
+            .normalize_s()
+            .to_der()
+            .encode_to_vec(&mut v)
+            .expect("Couldn't encode der to vec");
         v
     }
 }
@@ -107,7 +111,8 @@ impl IdentityBuilder {
             return Err(BuilderError::MissingParameter("pkey".into()));
         }
 
-        let signing_key = ecdsa::SigningKey::from_pkcs8_pem(&self.pkey.replace("EC ", "")).expect("Invalid signing key");
+        let signing_key = ecdsa::SigningKey::from_pkcs8_pem(&self.pkey.replace("EC ", ""))
+            .expect("Invalid signing key");
 
         Ok(Identity {
             msp: self.msp.unwrap(),

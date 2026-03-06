@@ -1,7 +1,5 @@
-use std::{hash::RandomState, io::Write};
+use std::io::Write;
 
-use ecdsa::signature::rand_core::{Rng, RngCore};
-use p256::elliptic_curve::{bigint::{Random, RandomBits}, common::getrandom::SysRng};
 use prost::Message;
 use sha2::Digest;
 

@@ -214,7 +214,6 @@ impl Client {
                                     return Ok(response.payload);
                                 }
                             }
-
                         }
                         Err(SubmitError::NoPayload)
                     }
@@ -246,9 +245,7 @@ impl Client {
             .discover(prepared_discovery_call.request)
             .await;
         match response {
-            Ok(response) => {
-                Ok(response.into_inner().results)
-            }
+            Ok(response) => Ok(response.into_inner().results),
             Err(err) => Err(SubmitError::NodeError(
                 String::from_utf8_lossy(err.details()).into_owned(),
             )),
