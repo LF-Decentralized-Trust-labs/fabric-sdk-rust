@@ -331,6 +331,7 @@ pub struct ClientBuilder {
     identity: Option<Identity>,
     tls: Option<Vec<u8>>,
     scheme: Option<String>,
+    path: Option<String>,
     authority: Option<String>,
 }
 
@@ -352,6 +353,15 @@ impl ClientBuilder {
     ///    .with_identity(identity)?;
     pub fn with_identity(mut self, identity: Identity) -> Result<ClientBuilder, BuilderError> {
         self.identity = Some(identity);
+        Ok(self)
+    }
+
+    /// Adds a url path to the request
+    /// Default is `/`
+    ///
+    /// Paths should lead with `/`
+    pub fn with_path(mut self, path: String) -> Result<ClientBuilder, BuilderError> {
+        self.path = Some(path);
         Ok(self)
     }
 
@@ -418,7 +428,7 @@ impl ClientBuilder {
             let uri_builder = tonic::transport::Uri::builder()
                 .scheme(scheme)
                 .authority(authority)
-                .path_and_query("/");
+                .path_and_query(self.path.unwrap_or("/".to_string()).as_str());
             match uri_builder.build() {
                 Ok(uri) => uri,
                 Err(err) => return Err(BuilderError::InvalidParameter(err.to_string())),
@@ -434,7 +444,7 @@ impl ClientBuilder {
                 Some(authority) => authority,
                 None => "localhost:7051".to_string(),
             };
-            format!("{scheme}://{authority}")
+            format!("{scheme}://{authority}{}", self.path.unwrap_or_default())
         };
 
         #[cfg(feature = "client-wasm")]
