@@ -21,13 +21,22 @@ use crate::{
 ///     Ok(())
 /// }
 /// ```
+#[cfg(not(feature = "client-wasm"))]
 pub struct IdentityBuilder {
     msp: Option<String>,
     cert: tonic::transport::Certificate,
     pkey: String,
 }
 
+#[cfg(feature = "client-wasm")]
+pub struct IdentityBuilder {
+    msp: Option<String>,
+    cert: Vec<u8>,
+    pkey: String,
+}
+
 /// An Identiy representation which is able to sign messages
+#[cfg(not(feature = "client-wasm"))]
 #[derive(Clone)]
 pub struct Identity {
     msp: String,
@@ -35,9 +44,23 @@ pub struct Identity {
     pkey: SigningKey<NistP256>,
 }
 
+#[cfg(feature = "client-wasm")]
+#[derive(Clone)]
+pub struct Identity {
+    msp: String,
+    cert: Vec<u8>,
+    pkey: SigningKey<NistP256>,
+}
+
 impl Identity {
+    #[cfg(not(feature = "client-wasm"))]
     pub(crate) fn get_certificate_bytes(&self) -> Vec<u8> {
         self.cert.clone().into_inner()
+    }
+
+    #[cfg(feature = "client-wasm")]
+    pub(crate) fn get_certificate_bytes(&self) -> Vec<u8> {
+        self.cert.clone()
     }
 
     pub(crate) fn generate_tls_cert_hash(&self) -> Vec<u8> {
@@ -52,7 +75,7 @@ impl Identity {
     pub(crate) fn get_serialized_identity(&self) -> SerializedIdentity {
         SerializedIdentity {
             mspid: self.msp.clone(),
-            id_bytes: self.cert.clone().into_inner(),
+            id_bytes: self.get_certificate_bytes(),
         }
     }
 
@@ -81,10 +104,20 @@ impl Identity {
 }
 
 impl IdentityBuilder {
+    #[cfg(not(feature = "client-wasm"))]
     pub fn from_pem(pem_bytes: &[u8]) -> Result<Self, BuilderError> {
         Ok(IdentityBuilder {
             msp: None,
             cert: tonic::transport::Certificate::from_pem(pem_bytes),
+            pkey: String::default(),
+        })
+    }
+
+    #[cfg(feature = "client-wasm")]
+    pub fn from_pem_bytes(pem_bytes: Vec<u8>) -> Result<Self, BuilderError> {
+        Ok(IdentityBuilder {
+            msp: None,
+            cert: pem_bytes,
             pkey: String::default(),
         })
     }

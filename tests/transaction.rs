@@ -1,9 +1,9 @@
 #[cfg(test)]
+#[cfg(not(feature = "client-wasm"))]
 mod transaction_test {
     use std::{env, fs};
 
     use fabric_sdk::{gateway::client, identity};
-
     #[test]
     fn test_transaction() {
         dotenv::dotenv().unwrap();

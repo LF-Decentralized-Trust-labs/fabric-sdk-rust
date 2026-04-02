@@ -15,22 +15,23 @@ pub mod fabric {
     #[cfg(feature = "chaincode")]
     pub mod queryresult;
 }
+//    #[cfg(not(feature = "client-wasm"))]
 
-#[cfg(feature = "chaincode")]
+#[cfg(all(feature = "chaincode",not(feature = "client-wasm")))]
 pub mod chaincode;
 
-#[cfg(any(feature = "chaincode", feature = "client"))]
+#[cfg(any(feature = "chaincode", feature = "client", feature = "client-wasm"))]
 pub mod error;
-#[cfg(any(feature = "chaincode", feature = "client"))]
+#[cfg(any(feature = "chaincode", feature = "client", feature = "client-wasm"))]
 pub mod gateway;
-#[cfg(any(feature = "chaincode", feature = "client"))]
+#[cfg(any(feature = "chaincode", feature = "client", feature = "client-wasm"))]
 pub mod identity;
-#[cfg(any(feature = "chaincode", feature = "client"))]
+#[cfg(any(feature = "chaincode", feature = "client", feature = "client-wasm"))]
 #[allow(dead_code)]
 pub(crate) mod transaction;
 
 pub mod prelude {
-    #[cfg(feature = "chaincode")]
+    #[cfg(all(feature = "chaincode",not(feature = "client-wasm")))]
     pub use crate::chaincode::context::Context;
     #[cfg(feature = "chaincode")]
     pub use derives::*;

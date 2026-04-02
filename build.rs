@@ -1,4 +1,8 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if std::env::var("client").is_ok() && std::env::var("client-wasm").is_ok(){
+        panic!("You cannot enable both `client` and `client-wasm` features. You either build for wasm or non-wasm targets.\nDid you forget to disable default features, which includes the `client` feature?")
+    }
+
     tonic_prost_build::configure()
         .build_client(true)
         .build_server(true)

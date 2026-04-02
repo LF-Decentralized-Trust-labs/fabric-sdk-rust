@@ -1,5 +1,5 @@
 pub mod chaincode;
-#[cfg(feature = "client")]
+#[cfg(any(feature = "client", feature = "client-wasm"))]
 pub mod client;
-#[cfg(feature = "client")]
+#[cfg(any(feature = "client", feature = "client-wasm"))]
 pub mod discovery;
