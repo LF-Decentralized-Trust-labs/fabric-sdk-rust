@@ -1,9 +1,9 @@
 #[cfg(test)]
+#[cfg(not(feature = "client-wasm"))]
 mod transaction_test {
     use std::{env, fs};
 
     use fabric_sdk::{gateway::client, identity};
-
     #[test]
     fn test_transaction() {
         dotenv::dotenv().unwrap();
@@ -23,9 +23,10 @@ mod transaction_test {
                     env::var("FUNCTION_NAME").expect("FUNCTION_NAME environment variable not set");
                 let channel_name =
                     env::var("CHANNEL_NAME").expect("CHANNEL_NAME environment variable not set");
-                let pkey =
-                    fs::read(std::env::var("PEER1_KEY_PATH").expect("PEER1_KEY_PATH not set"))
-                        .expect("No file found in PEER1_KEY_PATH");
+                let pkey = fs::read_to_string(
+                    std::env::var("PEER1_KEY_PATH").expect("PEER1_KEY_PATH not set"),
+                )
+                .expect("No file found in PEER1_KEY_PATH");
 
                 let identity = identity::IdentityBuilder::from_pem(
                     fs::read(

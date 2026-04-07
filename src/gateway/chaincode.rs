@@ -5,6 +5,7 @@ use crate::{
     fabric::{
         common::{ChannelHeader, Header, HeaderType, SignatureHeader},
         gateway::EndorseRequest,
+        google_protobuf::Timestamp,
         protos::{
             ChaincodeHeaderExtension, ChaincodeId, ChaincodeInput, ChaincodeInvocationSpec,
             ChaincodeProposalPayload, ChaincodeSpec, Proposal, SignedProposal,
@@ -102,7 +103,7 @@ impl ChaincodeCallBuilder {
         self
     }
     ///Statically sets the header. If the header is none, the builder will generate a new one every time building a transaction
-    pub fn with_herader(&mut self, signed_proposal: Option<SignedProposal>) -> &mut Self {
+    pub fn with_header(&mut self, signed_proposal: Option<SignedProposal>) -> &mut Self {
         self.proposal = signed_proposal;
         self
     }
@@ -237,10 +238,24 @@ impl ChaincodeCallBuilder {
             Some(proposal) => proposal.clone(),
             None => self.generate_proposal(&header, extension.encode_to_vec(), payload),
         };
-
         Ok(crate::fabric::protos::ChaincodeMessage {
             r#type: r#type.into(),
-            timestamp: Some(std::time::SystemTime::now().into()),
+            timestamp: Some({
+                #[cfg(feature = "client-wasm")]
+                {
+                    crate::fabric::google_protobuf::Timestamp {
+                        seconds: web_time::SystemTime::now()
+                            .elapsed()
+                            .expect("Cannot get elapsed from SystemTime")
+                            .as_secs() as i64,
+                        nanos: 0,
+                    }
+                }
+                #[cfg(not(feature = "client-wasm"))]
+                {
+                    std::time::SystemTime::now().into()
+                }
+            }),
             payload: chaincode_id.encode_to_vec(),
             txid: transaction_id,
             proposal: Some(signed_proposal),
@@ -264,7 +279,22 @@ impl ChaincodeCallBuilder {
         let channel_header = ChannelHeader {
             r#type: HeaderType::EndorserTransaction.into(),
             version: 1, //I dunno
-            timestamp: Some(std::time::SystemTime::now().into()),
+            timestamp: Some({
+                #[cfg(feature = "client-wasm")]
+                {
+                    crate::fabric::google_protobuf::Timestamp {
+                        seconds: web_time::SystemTime::now()
+                            .elapsed()
+                            .expect("Cannot get elapsed from SystemTime")
+                            .as_secs() as i64,
+                        nanos: 0,
+                    }
+                }
+                #[cfg(not(feature = "client-wasm"))]
+                {
+                    std::time::SystemTime::now().into()
+                }
+            }),
             channel_id: self
                 .channel_name
                 .as_ref()

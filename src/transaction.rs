@@ -1,4 +1,7 @@
+use std::io::Write;
+
 use prost::Message;
+use sha2::Digest;
 
 use crate::fabric::protos::{
     ChaincodeId, ChaincodeInput, ChaincodeInvocationSpec, ChaincodeProposalPayload, ChaincodeSpec,
@@ -16,20 +19,17 @@ pub(crate) const NONCE_LENGTH: usize = 24;
 /// A string representing the hashed transaction ID, encoded in hexadecimal format.
 pub(crate) fn generate_transaction_id(nonce: &[u8], creator: &[u8]) -> String {
     let salted_creator = [nonce, creator].concat();
-    let hash = openssl::sha::sha256(salted_creator.as_slice());
-    hex::encode(hash)
+    hex::encode(generate_sha256_hash(salted_creator.as_slice()))
 }
 
-pub(crate) fn generate_nonce() -> [u8; 24] {
-    let mut nonce = [0u8; NONCE_LENGTH];
-    openssl::rand::rand_bytes(&mut nonce).expect("Unable to generate random bytes");
-    nonce
+pub(crate) fn generate_nonce() -> [u8; NONCE_LENGTH] {
+    ecdsa::elliptic_curve::Generate::generate()
 }
 
 pub(crate) fn generate_sha256_hash(bytes: &[u8]) -> Vec<u8> {
-    let mut hasher = openssl::hash::Hasher::new(openssl::hash::MessageDigest::sha256()).unwrap();
-    hasher.update(bytes).unwrap();
-    hasher.finish().expect("Couldn't finalize hash").to_vec()
+    let mut hasher = sha2::Sha256::default();
+    hasher.write_all(bytes).unwrap();
+    hasher.finalize().to_vec()
 }
 
 pub(crate) fn generate_chaincode_definition(

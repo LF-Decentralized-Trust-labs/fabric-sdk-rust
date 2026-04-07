@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use futures_channel::mpsc::Receiver;
 use futures_util::StreamExt;
@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 use crate::{
     chaincode::message::MessageBuilder,
     fabric::{
-        common::{ChannelHeader, Header},
+        common::{ChannelHeader, Header, SignatureHeader},
         protos::{
             ChaincodeEvent, ChaincodeMessage, DelState, GetState, GetStateByRange, Proposal,
             PutState, QueryResponse, QueryStateNext, SignedProposal, chaincode_message,
@@ -196,6 +196,19 @@ impl Context {
 
     /// Returns the identity of the agent (or user) submitting the transaction.
     pub fn get_creator(&self) -> Vec<u8> {
+        let proposal = Proposal::decode(match self.message.proposal.as_ref() {
+            Some(proposal) => proposal.proposal_bytes.as_slice(),
+            None => return Vec::new(),
+        })
+        .expect("Invalid proposal bytes");
+        let header = Header::decode(proposal.header.as_slice()).expect("Invalid header");
+        let signature_header = SignatureHeader::decode(header.signature_header.as_slice())
+            .expect("Invalid signature header");
+        signature_header.creator
+    }
+
+    /// Returns the transient map of the transaction
+    pub fn get_transient_map(&self) -> HashMap<String, Vec<u8>> {
         unimplemented!()
     }
 }

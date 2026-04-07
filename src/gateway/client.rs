@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use prost::Message;
 
 use crate::{
@@ -26,6 +24,13 @@ pub struct Client {
     tonic_connection: TonicConnection,
 }
 
+#[cfg(feature = "client-wasm")]
+struct TonicConnection {
+    host: String,
+    channel: Option<tonic_web_wasm_client::Client>,
+}
+
+#[cfg(not(feature = "client-wasm"))]
 struct TonicConnection {
     tls_config: tonic::transport::ClientTlsConfig,
     host: tonic::transport::Uri,
@@ -33,6 +38,7 @@ struct TonicConnection {
 }
 
 impl Client {
+    #[cfg(not(feature = "client-wasm"))]
     pub async fn connect(&mut self) -> Result<(), tonic::transport::Error> {
         self.tonic_connection.channel = Some(
             tonic::transport::Channel::builder(self.tonic_connection.host.clone())
@@ -42,6 +48,13 @@ impl Client {
                 .await?,
         );
         Ok(())
+    }
+
+    #[cfg(feature = "client-wasm")]
+    pub async fn connect(&mut self) {
+        let client =
+            tonic_web_wasm_client::Client::new(self.tonic_connection.host.clone().to_string());
+        self.tonic_connection.channel = Some(client);
     }
     /// A builder for creating `PreparedTransaction` instances, from which you can submit the transaction.
     /// build() only prepares the transaction. It will not send anything to the network.
@@ -214,7 +227,6 @@ impl Client {
                                     return Ok(response.payload);
                                 }
                             }
-
                         }
                         Err(SubmitError::NoPayload)
                     }
@@ -246,9 +258,7 @@ impl Client {
             .discover(prepared_discovery_call.request)
             .await;
         match response {
-            Ok(response) => {
-                Ok(response.into_inner().results)
-            }
+            Ok(response) => Ok(response.into_inner().results),
             Err(err) => Err(SubmitError::NodeError(
                 String::from_utf8_lossy(err.details()).into_owned(),
             )),
@@ -321,6 +331,7 @@ pub struct ClientBuilder {
     identity: Option<Identity>,
     tls: Option<Vec<u8>>,
     scheme: Option<String>,
+    path: Option<String>,
     authority: Option<String>,
 }
 
@@ -345,6 +356,15 @@ impl ClientBuilder {
         Ok(self)
     }
 
+    /// Adds a url path to the request
+    /// Default is `/`
+    ///
+    /// Paths should lead with `/`
+    pub fn with_path(mut self, path: String) -> Result<ClientBuilder, BuilderError> {
+        self.path = Some(path);
+        Ok(self)
+    }
+
     /// Chooses which scheme is being used. Default value is `https`
     pub fn with_scheme(mut self, scheme: impl Into<String>) -> Result<ClientBuilder, BuilderError> {
         let scheme = scheme.into().trim().to_string();
@@ -358,6 +378,7 @@ impl ClientBuilder {
     }
     /// Tls for the grpc connection to the node.
     /// The needed pem from the test network can be found here: `organizations/peerOrganizations/org1.example.com/tlsca/tlsca.org1.example.com-cert.pem`
+    #[cfg(not(feature = "client-wasm"))]
     pub fn with_tls(mut self, bytes: impl Into<Vec<u8>>) -> Result<ClientBuilder, BuilderError> {
         self.tls = Some(bytes.into());
         Ok(self)
@@ -382,31 +403,57 @@ impl ClientBuilder {
             Some(identity) => identity,
             None => return Err(BuilderError::MissingParameter("identity".into())),
         };
-        let tls = match self.tls {
-            Some(tls) => tls,
-            None => return Err(BuilderError::MissingParameter("tls".into())),
+
+        #[cfg(not(feature = "client-wasm"))]
+        let uri = {
+            use std::str::FromStr;
+
+            let tls = match self.tls {
+                Some(tls) => tls,
+                None => return Err(BuilderError::MissingParameter("tls".into())),
+            };
+            //TODO Allow custom tls config
+            let tls_config = tonic::transport::ClientTlsConfig::new()
+                .ca_certificate(tonic::transport::Certificate::from_pem(tls.as_slice()));
+            let scheme = match self.scheme {
+                Some(scheme) => scheme,
+                None => "https".to_string(),
+            };
+            let authority = match self.authority {
+                Some(authority) => authority,
+                None => "localhost:7051".to_string(),
+            };
+            let scheme = tonic::codegen::http::uri::Scheme::from_str(scheme.as_str())
+                .expect("Invalid scheme");
+            let uri_builder = tonic::transport::Uri::builder()
+                .scheme(scheme)
+                .authority(authority)
+                .path_and_query(self.path.unwrap_or("/".to_string()).as_str());
+            match uri_builder.build() {
+                Ok(uri) => uri,
+                Err(err) => return Err(BuilderError::InvalidParameter(err.to_string())),
+            };
         };
-        //TODO Allow custom tls config
-        let tls_config = tonic::transport::ClientTlsConfig::new()
-            .ca_certificate(tonic::transport::Certificate::from_pem(tls.as_slice()));
-        let scheme = match self.scheme {
-            Some(scheme) => scheme,
-            None => "https".to_string(),
+        #[cfg(feature = "client-wasm")]
+        let uri = {
+            let scheme = match self.scheme {
+                Some(scheme) => scheme,
+                None => "https".to_string(),
+            };
+            let authority = match self.authority {
+                Some(authority) => authority,
+                None => "localhost:7051".to_string(),
+            };
+            format!("{scheme}://{authority}{}", self.path.unwrap_or_default())
         };
-        let authority = match self.authority {
-            Some(authority) => authority,
-            None => "localhost:7051".to_string(),
+
+        #[cfg(feature = "client-wasm")]
+        let tonic_connection = TonicConnection {
+            host: uri.to_string(),
+            channel: None,
         };
-        let scheme =
-            tonic::codegen::http::uri::Scheme::from_str(scheme.as_str()).expect("Invalid scheme");
-        let uri_builder = tonic::transport::Uri::builder()
-            .scheme(scheme)
-            .authority(authority)
-            .path_and_query("/");
-        let uri = match uri_builder.build() {
-            Ok(uri) => uri,
-            Err(err) => return Err(BuilderError::InvalidParameter(err.to_string())),
-        };
+
+        #[cfg(not(feature = "client-wasm"))]
         let tonic_connection = TonicConnection {
             tls_config,
             host: uri,
