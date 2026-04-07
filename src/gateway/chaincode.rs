@@ -5,7 +5,6 @@ use crate::{
     fabric::{
         common::{ChannelHeader, Header, HeaderType, SignatureHeader},
         gateway::EndorseRequest,
-        google_protobuf::Timestamp,
         protos::{
             ChaincodeHeaderExtension, ChaincodeId, ChaincodeInput, ChaincodeInvocationSpec,
             ChaincodeProposalPayload, ChaincodeSpec, Proposal, SignedProposal,

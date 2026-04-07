@@ -405,7 +405,7 @@ impl ClientBuilder {
         };
 
         #[cfg(not(feature = "client-wasm"))]
-        let uri = {
+        let (uri, tls_config) = {
             use std::str::FromStr;
 
             let tls = match self.tls {
@@ -430,9 +430,9 @@ impl ClientBuilder {
                 .authority(authority)
                 .path_and_query(self.path.unwrap_or("/".to_string()).as_str());
             match uri_builder.build() {
-                Ok(uri) => uri,
+                Ok(uri) => (uri, tls_config),
                 Err(err) => return Err(BuilderError::InvalidParameter(err.to_string())),
-            };
+            }
         };
         #[cfg(feature = "client-wasm")]
         let uri = {
