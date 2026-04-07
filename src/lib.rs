@@ -17,7 +17,7 @@ pub mod fabric {
 }
 //    #[cfg(not(feature = "client-wasm"))]
 
-#[cfg(all(feature = "chaincode",not(feature = "client-wasm")))]
+#[cfg(all(feature = "chaincode", not(feature = "client-wasm")))]
 pub mod chaincode;
 
 #[cfg(any(feature = "chaincode", feature = "client", feature = "client-wasm"))]
@@ -31,7 +31,7 @@ pub mod identity;
 pub(crate) mod transaction;
 
 pub mod prelude {
-    #[cfg(all(feature = "chaincode",not(feature = "client-wasm")))]
+    #[cfg(all(feature = "chaincode", not(feature = "client-wasm")))]
     pub use crate::chaincode::context::Context;
     #[cfg(feature = "chaincode")]
     pub use derives::*;
