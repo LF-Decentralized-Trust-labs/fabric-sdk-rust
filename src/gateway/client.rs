@@ -233,9 +233,7 @@ impl Client {
                     None => Err(SubmitError::EmptyRespone),
                 }
             }
-            Err(err) => Err(SubmitError::NodeError(
-                String::from_utf8_lossy(err.details()).into_owned(),
-            )),
+            Err(err) => Err(SubmitError::NodeError(err.to_string())),
         }
     }
 
