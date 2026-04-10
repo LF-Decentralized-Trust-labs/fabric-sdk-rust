@@ -21,14 +21,6 @@ use crate::{
 ///     Ok(())
 /// }
 /// ```
-#[cfg(not(feature = "client-wasm"))]
-pub struct IdentityBuilder {
-    msp: Option<String>,
-    cert: tonic::transport::Certificate,
-    pkey: String,
-}
-
-#[cfg(feature = "client-wasm")]
 pub struct IdentityBuilder {
     msp: Option<String>,
     cert: Vec<u8>,
@@ -36,15 +28,6 @@ pub struct IdentityBuilder {
 }
 
 /// An Identiy representation which is able to sign messages
-#[cfg(not(feature = "client-wasm"))]
-#[derive(Clone)]
-pub struct Identity {
-    msp: String,
-    cert: tonic::transport::Certificate,
-    pkey: SigningKey<NistP256>,
-}
-
-#[cfg(feature = "client-wasm")]
 #[derive(Clone)]
 pub struct Identity {
     msp: String,
@@ -53,12 +36,6 @@ pub struct Identity {
 }
 
 impl Identity {
-    #[cfg(not(feature = "client-wasm"))]
-    pub(crate) fn get_certificate_bytes(&self) -> Vec<u8> {
-        self.cert.clone().into_inner()
-    }
-
-    #[cfg(feature = "client-wasm")]
     pub(crate) fn get_certificate_bytes(&self) -> Vec<u8> {
         self.cert.clone()
     }
@@ -104,20 +81,10 @@ impl Identity {
 }
 
 impl IdentityBuilder {
-    #[cfg(not(feature = "client-wasm"))]
-    pub fn from_pem(pem_bytes: &[u8]) -> Result<Self, BuilderError> {
+    pub fn from_pem(pem_bytes: impl AsRef<[u8]>) -> Result<Self, BuilderError> {
         Ok(IdentityBuilder {
             msp: None,
-            cert: tonic::transport::Certificate::from_pem(pem_bytes),
-            pkey: String::default(),
-        })
-    }
-
-    #[cfg(feature = "client-wasm")]
-    pub fn from_pem_bytes(pem_bytes: Vec<u8>) -> Result<Self, BuilderError> {
-        Ok(IdentityBuilder {
-            msp: None,
-            cert: pem_bytes,
+            cert: pem_bytes.as_ref().into(),
             pkey: String::default(),
         })
     }
