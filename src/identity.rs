@@ -36,6 +36,7 @@ pub struct Identity {
 }
 
 impl Identity {
+    #[allow(dead_code)]
     pub(crate) fn get_certificate_bytes(&self) -> Vec<u8> {
         self.cert.clone()
     }
