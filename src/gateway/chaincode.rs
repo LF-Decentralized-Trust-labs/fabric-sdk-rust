@@ -244,8 +244,8 @@ impl ChaincodeCallBuilder {
                 {
                     crate::fabric::google_protobuf::Timestamp {
                         seconds: web_time::SystemTime::now()
-                            .elapsed()
-                            .expect("Cannot get elapsed from SystemTime")
+                            .duration_since(web_time::SystemTime::UNIX_EPOCH)
+                            .expect("Invalid duration calc")
                             .as_secs() as i64,
                         nanos: 0,
                     }
