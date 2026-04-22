@@ -1,4 +1,3 @@
-use prost::Message;
 #[allow(unused_imports)]
 use crate::{
     error::{BuilderError, SubmitError},
@@ -6,8 +5,9 @@ use crate::{
         common::Payload,
         discovery::{QueryResult, discovery_client::DiscoveryClient},
         gateway::{
-            CommitStatusRequest, CommitStatusResponse, SignedCommitStatusRequest, SubmitRequest,
-            gateway_client::GatewayClient,ChaincodeEventsRequest, SignedChaincodeEventsRequest,
+            ChaincodeEventsRequest, CommitStatusRequest, CommitStatusResponse,
+            SignedChaincodeEventsRequest, SignedCommitStatusRequest, SubmitRequest,
+            gateway_client::GatewayClient,
         },
         orderer::{SeekPosition, SeekSpecified},
         protos::{ChaincodeAction, ChaincodeActionPayload, ProposalResponsePayload, Transaction},
@@ -19,6 +19,7 @@ use crate::{
     identity::Identity,
     transaction::{generate_nonce, generate_transaction_id},
 };
+use prost::Message;
 
 pub struct Client {
     identity: Identity,
@@ -36,11 +37,6 @@ struct TonicConnection {
     tls_config: tonic::transport::ClientTlsConfig,
     host: tonic::transport::Uri,
     channel: Option<tonic::transport::Channel>,
-}
-
-pub struct SubmitResponse {
-    pub result: Vec<u8>,
-    pub txn_id: String,
 }
 
 impl Client {
@@ -112,101 +108,83 @@ impl Client {
         &self,
         prepared_chaincode_call: PreparedChaincodeCall,
     ) -> Result<Vec<u8>, SubmitError> {
-        let channel_id = prepared_chaincode_call.channel_name.clone();
-
-        let result = self
-            .submit_chaincode_async_call(prepared_chaincode_call)
-            .await?;
-
-        self.commit_status(result.txn_id, channel_id).await?;
-
-        Ok(result.result)
-    }
-
-    pub async fn submit_chaincode_async_call(
-        &self,
-        prepared_chaincode_call: PreparedChaincodeCall,
-    ) -> Result<SubmitResponse, SubmitError> {
-        let channel = self
-            .tonic_connection
-            .channel
-            .as_ref()
-            .ok_or(SubmitError::NotConnected)?
-            .clone();
-
-        let mut gateway_client = GatewayClient::new(channel);
-
-        // Endorse
+        if self.tonic_connection.channel.is_none() {
+            return Err(SubmitError::NotConnected);
+        }
+        let mut gateway_client = GatewayClient::new(
+            self.tonic_connection
+                .channel
+                .as_ref()
+                .expect("Expected value is none.")
+                .clone(),
+        );
+        //First transaction will be endorsed to the network
         let response = gateway_client
             .endorse(prepared_chaincode_call.endorse_request)
-            .await
-            .map_err(|err| {
-                SubmitError::NodeError(String::from_utf8_lossy(err.details()).into_owned())
-            })?;
+            .await;
+        match response {
+            Ok(response) => {
+                match response.into_inner().prepared_transaction {
+                    Some(mut envelope) => {
+                        //TODO CHECK SIGNATURES
 
-        let mut envelope = response
-            .into_inner()
-            .prepared_transaction
-            .ok_or(SubmitError::EmptyRespone)?;
+                        let mut result = vec![];
 
-        // Extract payload result
-        let payload =
-            Payload::decode(envelope.payload.as_slice()).map_err(|_| SubmitError::NoPayload)?;
-
-        let transaction =
-            Transaction::decode(payload.data.as_slice()).map_err(|_| SubmitError::NoPayload)?;
-
-        let mut result = None;
-
-        for action in transaction.actions {
-            if let Ok(action_payload) = ChaincodeActionPayload::decode(action.payload.as_slice()) {
-                if let Some(action) = action_payload.action {
-                    if let Ok(proposal_payload) =
-                        ProposalResponsePayload::decode(action.proposal_response_payload.as_slice())
-                    {
-                        if let Ok(chaincode_action) =
-                            ChaincodeAction::decode(proposal_payload.extension.as_slice())
+                        if let Ok(payload) = Payload::decode(envelope.payload.as_slice())
+                            && let Ok(transaction) = Transaction::decode(payload.data.as_slice())
                         {
-                            if let Some(response) = chaincode_action.response {
-                                result = Some(response.payload);
-                                break;
+                            let mut payload_found = false;
+                            for action in transaction.actions {
+                                if let Ok(action) =
+                                    ChaincodeActionPayload::decode(action.payload.as_slice())
+                                    && let Some(action) = action.action
+                                    && let Ok(payload) = ProposalResponsePayload::decode(
+                                        action.proposal_response_payload.as_slice(),
+                                    )
+                                    && let Ok(action) =
+                                        ChaincodeAction::decode(payload.extension.as_slice())
+                                    && let Some(response) = action.response
+                                {
+                                    result = response.payload;
+                                    payload_found = true;
+                                }
+                            }
+                            if !payload_found {
+                                return Err(SubmitError::NoPayload);
                             }
                         }
+                        //Generate random bytes for transaction id and signature header
+                        let nonce = generate_nonce();
+
+                        envelope.signature = self.identity.sign_message(&envelope.payload);
+
+                        //Create transaction id
+                        let transaction_id = generate_transaction_id(
+                            &nonce,
+                            self.identity
+                                .get_certificate_bytes()
+                                .encode_to_vec()
+                                .as_slice(),
+                        );
+                        let submit_request = SubmitRequest {
+                            transaction_id: transaction_id.clone(),
+                            channel_id: prepared_chaincode_call.channel_name.clone(),
+                            prepared_transaction: Some(envelope),
+                        };
+                        match gateway_client.submit(submit_request).await {
+                            Ok(_) => Ok(result),
+                            Err(err) => Err(SubmitError::NodeError(
+                                String::from_utf8_lossy(err.details()).into_owned(),
+                            )),
+                        }
                     }
+                    None => Err(SubmitError::EmptyRespone),
                 }
             }
+            Err(err) => Err(SubmitError::NodeError(
+                String::from_utf8_lossy(err.details()).into_owned(),
+            )),
         }
-
-        let result = result.ok_or(SubmitError::NoPayload)?;
-
-        // Sign
-        envelope.signature = self.identity.sign_message(&envelope.payload);
-
-        // Extract transaction ID
-        let tx_id = {
-            let header = payload.header.ok_or(SubmitError::NoPayload)?;
-            let channel_header =
-                crate::fabric::common::ChannelHeader::decode(header.channel_header.as_slice())
-                    .map_err(|_| SubmitError::NoPayload)?;
-
-            channel_header.tx_id
-        };
-
-        let submit_request = SubmitRequest {
-            transaction_id: tx_id.clone(),
-            channel_id: prepared_chaincode_call.channel_name.clone(),
-            prepared_transaction: Some(envelope),
-        };
-
-        // Submit
-        gateway_client.submit(submit_request).await.map_err(|err| {
-            SubmitError::NodeError(String::from_utf8_lossy(err.details()).into_owned())
-        })?;
-
-        Ok(SubmitResponse {
-            result,
-            txn_id: tx_id,
-        })
     }
 
     /// Executes a chaincode call and does not send it to an orderer, therefore not affecting the ledger. This is good for read-only calls
@@ -550,10 +528,7 @@ impl ChaincodeEventsRequestBuilder {
         self
     }
 
-    pub fn with_after_transaction_id(
-        mut self,
-        transaction_id: impl Into<String>,
-    ) -> Self {
+    pub fn with_after_transaction_id(mut self, transaction_id: impl Into<String>) -> Self {
         self.after_transaction_id = Some(transaction_id.into());
         self
     }
@@ -573,7 +548,9 @@ impl ChaincodeEventsRequestBuilder {
 
         let start_position = self.start_block.map(|block_number| SeekPosition {
             r#type: Some(crate::fabric::orderer::seek_position::Type::Specified(
-                SeekSpecified { number: block_number },
+                SeekSpecified {
+                    number: block_number,
+                },
             )),
         });
 
@@ -595,10 +572,7 @@ impl ChaincodeEventsRequestBuilder {
     }
 }
 
-fn validate_non_empty(
-    value: impl Into<String>,
-    field: &str,
-) -> Result<String, BuilderError> {
+fn validate_non_empty(value: impl Into<String>, field: &str) -> Result<String, BuilderError> {
     let value = value.into().trim().to_string();
 
     if value.is_empty() {

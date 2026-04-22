@@ -14,15 +14,20 @@ mod transaction_test {
             .block_on(async {
                 let chaincode_name = env::var("CHAINCODE_NAME")
                     .expect("CHAINCODE_NAME environment variable not set");
+                println!("Chaincode: {chaincode_name}");
                 let contract_name = env::var("CONTRACT_NAME").unwrap_or_default();
+                println!("Contract: {contract_name}");
                 let _ = env::var("CHAINCODE_VERSION")
                     .expect("CHAINCODE_VERSION environment variable not set");
-
-                let _ = env::var("CONTRACT_NAME").unwrap_or_default();
                 let function_name =
                     env::var("FUNCTION_NAME").expect("FUNCTION_NAME environment variable not set");
+                println!("Function: {function_name}");
                 let channel_name =
                     env::var("CHANNEL_NAME").expect("CHANNEL_NAME environment variable not set");
+                println!("Channel: {channel_name}");
+                let msp_id = env::var("MSP_ID").expect("MSP_ID environment variable not set");
+                println!("Msp: {msp_id}");
+
                 let pkey = fs::read_to_string(
                     std::env::var("PEER1_KEY_PATH").expect("PEER1_KEY_PATH not set"),
                 )
@@ -37,7 +42,7 @@ mod transaction_test {
                     .as_slice(),
                 )
                 .unwrap()
-                .with_msp(env::var("MSP_ID").expect("MSP_ID environment variable not set"))
+                .with_msp(msp_id)
                 .unwrap()
                 .with_private_key(pkey)
                 .unwrap()
@@ -63,8 +68,8 @@ mod transaction_test {
                     .unwrap();
                 client.connect().await.unwrap();
 
-                let mut tx_builder = client.get_chaincode_call_builder();
-                tx_builder
+                let mut chaincode_call_builder = client.get_chaincode_call_builder();
+                chaincode_call_builder
                     .with_channel_name(channel_name)
                     .unwrap()
                     .with_chaincode_id(chaincode_name)
@@ -72,9 +77,11 @@ mod transaction_test {
                     .with_function_name(function_name)
                     .unwrap();
                 if !contract_name.is_empty() {
-                    tx_builder.with_contract_id(contract_name).unwrap();
+                    chaincode_call_builder
+                        .with_contract_id(contract_name)
+                        .unwrap();
                 }
-                match tx_builder.build() {
+                match chaincode_call_builder.build() {
                     Ok(prepared_transaction) => {
                         match client.submit_chaincode_call(prepared_transaction).await {
                             Ok(result) => {
