@@ -37,14 +37,14 @@ If you find yourself missing a method or for any features please open an issue.
 
 | Method     | Implemented      | Unit Tests | Documentation |
 | - | - | - | - |
-| DelState | ✅ | ❌ | 🏻 |
+| DelState | ✅ | 🏻 | 🏻 |
 | GetHistoryForKey | ❌ | ❌ | ❌ |
-| GetState | ✅  | ❌ | 🏻 |
-| GetStateByRange | ✅ | ❌ | 🏻 |
+| GetState | ✅  | 🏻 | 🏻 |
+| GetStateByRange | ✅ | 🏻 | 🏻 |
 | GetStateMetadata | ❌ | ❌ | ❌ |
 | GetStateMultiple | ❌ | ❌ | ❌ |
 | PurgePrivateState | ❌ | ❌ | ❌ |
-| PutState | ✅  | ❌ | 🏻 |
+| PutState | ✅  | 🏻 | 🏻 |
 | PutStateMetadata | ❌ | ❌ | ❌ |
 
 ## [ChaincodeSupport](https://hyperledger.github.io/fabric-protos/protos.html#protos-ChaincodeSupport)
