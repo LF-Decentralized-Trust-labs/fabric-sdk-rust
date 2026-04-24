@@ -38,6 +38,7 @@ impl std::fmt::Display for ContractError {
 pub enum SubmitError {
     NotConnected,
     NodeError(String),
+    DecodeError(&'static str),
     EmptyRespone,
     NoPayload,
 }
@@ -55,6 +56,9 @@ impl std::fmt::Display for SubmitError {
             }
             SubmitError::NodeError(err) => {
                 write!(f, "Submitting to node failed: {}", err)
+            }
+            SubmitError::DecodeError(err) => {
+                write!(f, "Failed decoding struct: {}", err)
             }
             SubmitError::EmptyRespone => {
                 write!(f, "Received empty response from node")

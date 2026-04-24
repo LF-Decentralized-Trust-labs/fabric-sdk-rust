@@ -4,7 +4,7 @@
 #[cfg(not(feature = "client-wasm"))]
 mod chaincode {
     use fabric_sdk::{gateway::client, identity};
-    use std::{env, fs, thread, time::Duration};
+    use std::{env, fs};
 
     #[test]
     fn test_chaincode() {
@@ -64,33 +64,15 @@ mod chaincode {
 
                 let asset_list = {
                     let mut chaincode_call_builder = client.get_chaincode_call_builder();
-                    chaincode_call_builder
+                    let prepared_transaction = chaincode_call_builder
                         .with_channel_name(channel_name.clone())
                         .unwrap()
                         .with_chaincode_id(chaincode_name.clone())
                         .unwrap()
                         .with_function_name("get_all_assets")
-                        .unwrap();
-
-                    match chaincode_call_builder.build() {
-                        Ok(prepared_transaction) => {
-                            match client.submit_chaincode_call(prepared_transaction).await {
-                                Ok(result) => {
-                                    let result_string = String::from_utf8(result).unwrap();
-                                    println!("{}", result_string);
-                                    result_string
-                                }
-                                Err(err) => {
-                                    println!("Failed to submit: {}", err);
-                                    panic!("Failed to submit: {}", err);
-                                }
-                            }
-                        }
-                        Err(err) => {
-                            println!("{}", err);
-                            panic!("{}", err);
-                        }
-                    }
+                        .unwrap().build().unwrap();
+                    let envelope = prepared_transaction.endorse(&client).await.unwrap();
+                    envelope.get_payload().unwrap().get_transaction().unwrap().get_result_string().unwrap()
                 };
                 // Empty list ist to be expected
                 assert_eq!(&asset_list, "\"[]\"");
@@ -98,7 +80,7 @@ mod chaincode {
                 // Insert an asset
                 let frank_the_fish = {
                     let mut chaincode_call_builder = client.get_chaincode_call_builder();
-                    chaincode_call_builder
+                    let prepared_transaction = chaincode_call_builder
                         .with_channel_name(channel_name.clone())
                         .unwrap()
                         .with_chaincode_id(chaincode_name.clone())
@@ -106,38 +88,22 @@ mod chaincode {
                         .with_function_name("create_asset")
                         .unwrap()
                         .with_function_args(["Fish", "Orange", "10", "Frank", "1"])
-                        .unwrap();
+                        .unwrap().build().unwrap();
+                    let mut envelope = prepared_transaction.endorse(&client).await.unwrap();
 
-                    match chaincode_call_builder.build() {
-                        Ok(prepared_transaction) => {
-                            match client.submit_chaincode_call(prepared_transaction).await {
-                                Ok(result) => {
-                                    let result_string = String::from_utf8(result).unwrap();
-                                    println!("{}", result_string);
-                                    result_string
-                                }
-                                Err(err) => {
-                                    println!("Failed to submit: {}", err);
-                                    panic!("Failed to submit: {}", err);
-                                }
-                            }
-                        }
-                        Err(err) => {
-                            println!("{}", err);
-                            panic!("{}", err);
-                        }
-                    }
+                    // To have persistent changes, the envelope has to be submitted
+                    envelope.submit(&client).await.expect("Submit error");
+                    // To be certain, that the envelope has been submitted and therefore the changes be written into the ledger, we wait for the commit
+                    envelope.wait_for_commit(&client).await.expect("Error while waiting for commit");
+                    envelope.get_payload().unwrap().get_transaction().unwrap().get_result_string().unwrap()
                 };
                 assert_eq!(&frank_the_fish, "{\"asset_id\":\"Fish\",\"color\":\"Orange\",\"size\":10,\"owner\":\"Frank\",\"appraised_value\":1}");
 
                 // Read an asset
-                // Here we have to wait for the transaction to be committed
-                // TODO: Extract transaction id from prepared_transaction
-                // client.commit_status(transaction_id, channel_id)
-                thread::sleep(Duration::from_secs(3)); //Hard coded sleep as long as no transaction status is available
+                // If we wouldn't have waited for the commit earlier, it is possible that we get an error reading the asset since it is not yet written into the ledger
                 let read_frank_the_fish = {
                     let mut chaincode_call_builder = client.get_chaincode_call_builder();
-                    chaincode_call_builder
+                    let prepared_transaction = chaincode_call_builder
                         .with_channel_name(channel_name.clone())
                         .unwrap()
                         .with_chaincode_id(chaincode_name.clone())
@@ -145,65 +111,29 @@ mod chaincode {
                         .with_function_name("read_asset")
                         .unwrap()
                         .with_function_args(["Fish"])
-                        .unwrap();
-
-                    match chaincode_call_builder.build() {
-                        Ok(prepared_transaction) => {
-                            match client.submit_chaincode_call(prepared_transaction).await {
-                                Ok(result) => {
-                                    let result_string = String::from_utf8(result).unwrap();
-                                    println!("{}", result_string);
-                                    result_string
-                                }
-                                Err(err) => {
-                                    println!("Failed to submit: {}", err);
-                                    panic!("Failed to submit: {}", err);
-                                }
-                            }
-                        }
-                        Err(err) => {
-                            println!("{}", err);
-                            panic!("{}", err);
-                        }
-                    }
+                        .unwrap().build().unwrap();
+                    let envelope = prepared_transaction.endorse(&client).await.unwrap();
+                    envelope.get_payload().unwrap().get_transaction().unwrap().get_result_string().unwrap()
                 };
                 assert_eq!(&frank_the_fish, &read_frank_the_fish);
                 let asset_list = {
                     let mut chaincode_call_builder = client.get_chaincode_call_builder();
-                    chaincode_call_builder
+                    let prepared_transactoin = chaincode_call_builder
                         .with_channel_name(channel_name.clone())
                         .unwrap()
                         .with_chaincode_id(chaincode_name.clone())
                         .unwrap()
                         .with_function_name("get_all_assets")
-                        .unwrap();
-
-                    match chaincode_call_builder.build() {
-                        Ok(prepared_transaction) => {
-                            match client.submit_chaincode_call(prepared_transaction).await {
-                                Ok(result) => {
-                                    let result_string = String::from_utf8(result).unwrap();
-                                    println!("{}", result_string);
-                                    result_string
-                                }
-                                Err(err) => {
-                                    println!("Failed to submit: {}", err);
-                                    panic!("Failed to submit: {}", err);
-                                }
-                            }
-                        }
-                        Err(err) => {
-                            println!("{}", err);
-                            panic!("{}", err);
-                        }
-                    }
+                        .unwrap().build().unwrap();
+                    let envelope = prepared_transactoin.endorse(&client).await.unwrap();
+                    envelope.get_payload().unwrap().get_transaction().unwrap().get_result_string().unwrap()
                 };
                 assert_eq!(&asset_list, "\"[{\\\"appraised_value\\\":1,\\\"asset_id\\\":\\\"Fish\\\",\\\"color\\\":\\\"Orange\\\",\\\"owner\\\":\\\"Frank\\\",\\\"size\\\":10}]\"");
 
                 // Delete an asset
                 {
                     let mut chaincode_call_builder = client.get_chaincode_call_builder();
-                    chaincode_call_builder
+                    let prepared_transactoin = chaincode_call_builder
                         .with_channel_name(channel_name.clone())
                         .unwrap()
                         .with_chaincode_id(chaincode_name.clone())
@@ -211,58 +141,24 @@ mod chaincode {
                         .with_function_name("delete_asset")
                         .unwrap()
                         .with_function_args(["Fish"])
-                        .unwrap();
+                        .unwrap().build().unwrap();
 
-                    match chaincode_call_builder.build() {
-                        Ok(prepared_transaction) => {
-                            match client.submit_chaincode_call(prepared_transaction).await {
-                                Ok(_) => {}
-                                Err(err) => {
-                                    println!("Failed to submit: {}", err);
-                                    panic!("Failed to submit: {}", err);
-                                }
-                            }
-                        }
-                        Err(err) => {
-                            println!("{}", err);
-                            panic!("{}", err);
-                        }
-                    }
+                    let mut envelope = prepared_transactoin.endorse(&client).await.unwrap();
+                    envelope.submit(&client).await.unwrap();
+                    envelope.wait_for_commit(&client).await.unwrap();
                 }
                 // Read assets again and check if the changes were persistent
-                // Here we have to wait for the transaction to be committed
-                // TODO: Extract transaction id from prepared_transaction
-                // client.commit_status(transaction_id, channel_id)
-                thread::sleep(Duration::from_secs(3)); //Hard coded sleep as long as no transaction status is available
                 let asset_list = {
                     let mut chaincode_call_builder = client.get_chaincode_call_builder();
-                    chaincode_call_builder
+                    let prepared_transaction = chaincode_call_builder
                         .with_channel_name(channel_name.clone())
                         .unwrap()
                         .with_chaincode_id(chaincode_name.clone())
                         .unwrap()
                         .with_function_name("get_all_assets")
-                        .unwrap();
-
-                    match chaincode_call_builder.build() {
-                        Ok(prepared_transaction) => {
-                            match client.submit_chaincode_call(prepared_transaction).await {
-                                Ok(result) => {
-                                    let result_string = String::from_utf8(result).unwrap();
-                                    println!("{}", result_string);
-                                    result_string
-                                }
-                                Err(err) => {
-                                    println!("Failed to submit: {}", err);
-                                    panic!("Failed to submit: {}", err);
-                                }
-                            }
-                        }
-                        Err(err) => {
-                            println!("{}", err);
-                            panic!("{}", err);
-                        }
-                    }
+                        .unwrap().build().unwrap();
+                    let envelope = prepared_transaction.endorse(&client).await.unwrap();
+                    envelope.get_payload().unwrap().get_transaction().unwrap().get_result_string().unwrap()
                 };
                 // Empty list ist to be expected
                 assert_eq!(&asset_list, "\"[]\"");

@@ -13,33 +13,43 @@ use crate::{
         protos::{ChaincodeAction, ChaincodeActionPayload, ProposalResponsePayload, Transaction},
     },
     gateway::{
-        chaincode::{ChaincodeCallBuilder, PreparedChaincodeCall},
+        chaincode::ChaincodeCallBuilder,
         discovery::{DiscoveryCallBuilder, PreparedDiscoveryCall},
     },
     identity::Identity,
-    transaction::{generate_nonce, generate_transaction_id},
+    implement::crypto::{generate_nonce, generate_transaction_id},
 };
 use prost::Message;
 
 pub struct Client {
-    identity: Identity,
-    tonic_connection: TonicConnection,
+    pub(crate) identity: Identity,
+    pub(crate) tonic_connection: TonicConnection,
 }
 
 #[cfg(feature = "client-wasm")]
-struct TonicConnection {
-    host: String,
-    channel: Option<tonic_web_wasm_client::Client>,
+pub(crate) struct TonicConnection {
+    pub(crate) host: String,
+    pub(crate) channel: Option<tonic_web_wasm_client::Client>,
 }
 
 #[cfg(not(feature = "client-wasm"))]
-struct TonicConnection {
-    tls_config: tonic::transport::ClientTlsConfig,
-    host: tonic::transport::Uri,
-    channel: Option<tonic::transport::Channel>,
+pub(crate) struct TonicConnection {
+    pub(crate) tls_config: tonic::transport::ClientTlsConfig,
+    pub(crate) host: tonic::transport::Uri,
+    pub(crate) channel: Option<tonic::transport::Channel>,
 }
 
 impl Client {
+    pub(crate) fn create_gateway(&self) -> GatewayClient<tonic::transport::Channel> {
+        GatewayClient::new(
+            self.tonic_connection
+                .channel
+                .as_ref()
+                .expect("Expected value is none.")
+                .clone(),
+        )
+    }
+
     #[cfg(not(feature = "client-wasm"))]
     pub async fn connect(&mut self) -> Result<(), tonic::transport::Error> {
         self.tonic_connection.channel = Some(
@@ -103,142 +113,6 @@ impl Client {
         }
     }
 
-    /// Submits a prepared transaction to the network. Changed will be transmitted to the orderer and the ledger will be affected from the chaincode call.
-    pub async fn submit_chaincode_call(
-        &self,
-        prepared_chaincode_call: PreparedChaincodeCall,
-    ) -> Result<Vec<u8>, SubmitError> {
-        if self.tonic_connection.channel.is_none() {
-            return Err(SubmitError::NotConnected);
-        }
-        let mut gateway_client = GatewayClient::new(
-            self.tonic_connection
-                .channel
-                .as_ref()
-                .expect("Expected value is none.")
-                .clone(),
-        );
-        //First transaction will be endorsed to the network
-        let response = gateway_client
-            .endorse(prepared_chaincode_call.endorse_request)
-            .await;
-        match response {
-            Ok(response) => {
-                match response.into_inner().prepared_transaction {
-                    Some(mut envelope) => {
-                        //TODO CHECK SIGNATURES
-
-                        let mut result = vec![];
-
-                        if let Ok(payload) = Payload::decode(envelope.payload.as_slice())
-                            && let Ok(transaction) = Transaction::decode(payload.data.as_slice())
-                        {
-                            let mut payload_found = false;
-                            for action in transaction.actions {
-                                if let Ok(action) =
-                                    ChaincodeActionPayload::decode(action.payload.as_slice())
-                                    && let Some(action) = action.action
-                                    && let Ok(payload) = ProposalResponsePayload::decode(
-                                        action.proposal_response_payload.as_slice(),
-                                    )
-                                    && let Ok(action) =
-                                        ChaincodeAction::decode(payload.extension.as_slice())
-                                    && let Some(response) = action.response
-                                {
-                                    result = response.payload;
-                                    payload_found = true;
-                                }
-                            }
-                            if !payload_found {
-                                return Err(SubmitError::NoPayload);
-                            }
-                        }
-                        //Generate random bytes for transaction id and signature header
-                        let nonce = generate_nonce();
-
-                        envelope.signature = self.identity.sign_message(&envelope.payload);
-
-                        //Create transaction id
-                        let transaction_id = generate_transaction_id(
-                            &nonce,
-                            self.identity
-                                .get_certificate_bytes()
-                                .encode_to_vec()
-                                .as_slice(),
-                        );
-                        let submit_request = SubmitRequest {
-                            transaction_id: transaction_id.clone(),
-                            channel_id: prepared_chaincode_call.channel_name.clone(),
-                            prepared_transaction: Some(envelope),
-                        };
-                        match gateway_client.submit(submit_request).await {
-                            Ok(_) => Ok(result),
-                            Err(err) => Err(SubmitError::NodeError(
-                                String::from_utf8_lossy(err.details()).into_owned(),
-                            )),
-                        }
-                    }
-                    None => Err(SubmitError::EmptyRespone),
-                }
-            }
-            Err(err) => Err(SubmitError::NodeError(
-                String::from_utf8_lossy(err.details()).into_owned(),
-            )),
-        }
-    }
-
-    /// Executes a chaincode call and does not send it to an orderer, therefore not affecting the ledger. This is good for read-only calls
-    pub async fn peek_chaincode_call(
-        &self,
-        prepared_chaincode_call: PreparedChaincodeCall,
-    ) -> Result<Vec<u8>, SubmitError> {
-        if self.tonic_connection.channel.is_none() {
-            return Err(SubmitError::NotConnected);
-        }
-        let mut gateway_client = GatewayClient::new(
-            self.tonic_connection
-                .channel
-                .as_ref()
-                .expect("Expected value is none.")
-                .clone(),
-        );
-        //First transaction will be endorsed to the network
-        let response = gateway_client
-            .endorse(prepared_chaincode_call.endorse_request)
-            .await;
-        match response {
-            Ok(response) => {
-                match response.into_inner().prepared_transaction {
-                    Some(envelope) => {
-                        //TODO CHECK SIGNATURES
-
-                        if let Ok(payload) = Payload::decode(envelope.payload.as_slice())
-                            && let Ok(transaction) = Transaction::decode(payload.data.as_slice())
-                        {
-                            for action in transaction.actions {
-                                if let Ok(action) =
-                                    ChaincodeActionPayload::decode(action.payload.as_slice())
-                                    && let Some(action) = action.action
-                                    && let Ok(payload) = ProposalResponsePayload::decode(
-                                        action.proposal_response_payload.as_slice(),
-                                    )
-                                    && let Ok(action) =
-                                        ChaincodeAction::decode(payload.extension.as_slice())
-                                    && let Some(response) = action.response
-                                {
-                                    return Ok(response.payload);
-                                }
-                            }
-                        }
-                        Err(SubmitError::NoPayload)
-                    }
-                    None => Err(SubmitError::EmptyRespone),
-                }
-            }
-            Err(err) => Err(SubmitError::NodeError(err.to_string())),
-        }
-    }
-
     /// Discovery defines a service that serves information about the fabric network like which peers, orderers, chaincodes, etc.
     pub async fn submit_discover_call(
         &self,
@@ -267,7 +141,7 @@ impl Client {
 
     /// Checks for the commit status of a given transaction
     ///
-    /// This method will run until the commit will occur if it hasn’t already committed. So only run this immidentialy after [`submit()`](submit).
+    /// This method will run until the commit will occur if it hasn’t already committed. So only run this if you expect the transaction. To check the commit status from a self sended transaction, use [wait_for_commit](crate::implement::envelope::wait_for_commit) instead.
     pub async fn commit_status(
         &self,
         transaction_id: String,

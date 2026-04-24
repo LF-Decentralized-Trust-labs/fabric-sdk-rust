@@ -3,7 +3,7 @@ use p256::NistP256;
 use prost::Message;
 
 use crate::{
-    error::BuilderError, fabric::msp::SerializedIdentity, transaction::generate_sha256_hash,
+    error::BuilderError, fabric::msp::SerializedIdentity, implement::crypto::generate_sha256_hash,
 };
 /// A builder for creating an identity.
 /// The needed pem file is usally found in the test network under `organizations/peerOrganizations/org1.example.com/users/User1@org1.example.com/msp/signcerts/User1@org1.example.com-cert.pem`
