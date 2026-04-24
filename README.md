@@ -28,6 +28,6 @@ A list of features and their implementation status can be found [here](doc/imple
 
 Contributors are always welcome! Do not hesitate asking any question or for help. The topic can be complex and I we are always glad to support you. To engage with the community you can find some links [here](https://github.com/hyperledger/fabric#Community).
 
-Head into the [issues](https://github.com/LF-Decentralized-Trust-labs/fabric-sdk-rust/issues?q=state%3Aopen%20label%3Atodo) and look for unassigned todos. To avoid the same feature being implement twice, please state that you are working on the todo/issue so you can be assigned to it.
+Head into the doc for the [implementation status](doc/implementation_status.md) to have an overview to see what to do.
 
 Docs for the fabric-protos can be found [here](https://hyperledger.github.io/fabric-protos/protos.html#gateway-Gateway)
