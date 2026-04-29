@@ -5,16 +5,17 @@ use crate::{
         common::Payload,
         discovery::{QueryResult, discovery_client::DiscoveryClient},
         gateway::{
-            ChaincodeEventsRequest, CommitStatusRequest, CommitStatusResponse,
-            SignedChaincodeEventsRequest, SignedCommitStatusRequest, SubmitRequest,
-            gateway_client::GatewayClient,
+            ChaincodeEventsRequest, CommitStatusRequest, CommitStatusResponse, EvaluateRequest,
+            EvaluateResponse, SignedChaincodeEventsRequest, SignedCommitStatusRequest,
+            SubmitRequest, gateway_client::GatewayClient,
         },
         orderer::{SeekPosition, SeekSpecified},
-        protos::{ChaincodeAction, ChaincodeActionPayload, ProposalResponsePayload, Transaction},
+        protos::{ChaincodeAction, ChaincodeActionPayload, ProposalResponsePayload, SignedProposal, Transaction},
     },
     gateway::{
         chaincode::ChaincodeCallBuilder,
         discovery::{DiscoveryCallBuilder, PreparedDiscoveryCall},
+        snapshot,
     },
     identity::Identity,
     implement::crypto::{generate_nonce, generate_transaction_id},
@@ -175,6 +176,49 @@ impl Client {
         }
     }
 
+    /// Evaluates a transaction (query) without updating the ledger.
+    /// This method passes a proposed transaction to the gateway in order to invoke the
+    /// transaction function and return the result to the client. No ledger updates are made.
+    pub async fn evaluate(
+        &self,
+        signed_proposal: SignedProposal,
+        transaction_id: String,
+        channel_id: String,
+    ) -> Result<Vec<u8>, SubmitError> {
+        if self.tonic_connection.channel.is_none() {
+            return Err(SubmitError::NotConnected);
+        }
+
+        let request = EvaluateRequest {
+            transaction_id,
+            channel_id,
+            proposed_transaction: Some(signed_proposal),
+            target_organizations: vec![], // Currently empty since private data is not implemented yet
+        };
+
+        let mut gateway_client = GatewayClient::new(
+            self.tonic_connection
+                .channel
+                .as_ref()
+                .expect("Expected value is none.")
+                .clone(),
+        );
+
+        let response = gateway_client.evaluate(request).await;
+        match response {
+            Ok(response) => {
+                let inner = response.into_inner();
+                match inner.result {
+                    Some(result) => Ok(result.payload),
+                    None => Err(SubmitError::NoPayload),
+                }
+            }
+            Err(err) => Err(SubmitError::NodeError(
+                String::from_utf8_lossy(err.details()).into_owned(),
+            )),
+        }
+    }
+
     pub fn get_chaincode_events_request_builder(&self) -> ChaincodeEventsRequestBuilder {
         ChaincodeEventsRequestBuilder::new(self.identity.clone())
     }
@@ -204,6 +248,22 @@ impl Client {
                 String::from_utf8_lossy(&err.details()).into_owned(),
             )),
         }
+    }
+
+    /// Creates a new SnapshotClientWrapper for interacting with the Snapshot service.
+    /// The channel must be connected before calling this method.
+    #[cfg(not(feature = "client-wasm"))]
+    pub fn create_snapshot_client(&self) -> Result<snapshot::SnapshotClientWrapper, SubmitError> {
+        if self.tonic_connection.channel.is_none() {
+            return Err(SubmitError::NotConnected);
+        }
+        let channel = self
+            .tonic_connection
+            .channel
+            .as_ref()
+            .expect("Expected value is none.")
+            .clone();
+        Ok(snapshot::SnapshotClientWrapper::new(channel))
     }
 }
 

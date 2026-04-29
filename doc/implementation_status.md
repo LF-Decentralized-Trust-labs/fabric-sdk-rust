@@ -24,7 +24,7 @@ If you find yourself missing a method or for any features please open an issue.
 | Endorse | ✅ | 🏻 | 🏻 |
 | Submit | ✅ | 🏻 | 🏻 |
 | CommitStatus | ✅ | ❌ | 🏻 |
-| Evaluate | ❌ | ❌ | ❌ |
+| Evaluate | ✅ | ❌ | 🏻 |
 | ChaincodeEvents | ✅ | ❌ | 🖉 |
 
 ## [Chaincode](https://hyperledger.github.io/fabric-protos/protos.html#protos-Chaincode)
@@ -38,14 +38,14 @@ If you find yourself missing a method or for any features please open an issue.
 | Method     | Implemented      | Unit Tests | Documentation |
 | - | - | - | - |
 | DelState | ✅ | 🏻 | 🏻 |
-| GetHistoryForKey | ❌ | ❌ | ❌ |
+| GetHistoryForKey | ✅ | ❌ | 🏻 |
 | GetState | ✅  | 🏻 | 🏻 |
 | GetStateByRange | ✅ | 🏻 | 🏻 |
-| GetStateMetadata | ❌ | ❌ | ❌ |
-| GetStateMultiple | ❌ | ❌ | ❌ |
-| PurgePrivateState | ❌ | ❌ | ❌ |
+| GetStateMetadata | ✅ | ❌ | 🏻 |
+| GetStateMultiple | ✅ | ❌ | 🏻 |
+| PurgePrivateState | ✅ | ❌ | 🏻 |
 | PutState | ✅  | 🏻 | 🏻 |
-| PutStateMetadata | ❌ | ❌ | ❌ |
+| PutStateMetadata | ✅ | ❌ | 🏻 |
 
 ## [ChaincodeSupport](https://hyperledger.github.io/fabric-protos/protos.html#protos-ChaincodeSupport)
 
@@ -58,16 +58,16 @@ If you find yourself missing a method or for any features please open an issue.
 
 | Method     | Implemented      | Unit Tests | Documentation |
 | - | - | - | - |
-| Generate | ❌ | ❌ | ❌ |
-| Cancel | ❌ | ❌ | ❌ |
-| QueryPendings | ❌ | ❌ | ❌ |
+| Generate | ✅ | ❌ | 🏻 |
+| Cancel | ✅ | ❌ | 🏻 |
+| QueryPendings | ✅ | ❌ | 🏻 |
 
 ### Snapshot Methods
 
 | Method     | Implemented      | Unit Tests | Documentation |
 | - | - | - | - |
-| SignedSnapshotRequest | ❌ | ❌ | ❌ |
-| SnapshotRequest | ❌ | ❌ | ❌ |
+| SignedSnapshotRequest | ✅ | ❌ | 🏻 |
+| SnapshotRequest | ✅ | ❌ | 🏻 |
 
 ## [Gossip](https://hyperledger.github.io/fabric-protos/protos.html#gossip-Gossip)
 
