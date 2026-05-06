@@ -10,6 +10,7 @@ pub mod fabric {
     pub mod google_protobuf;
     pub mod gossip;
     pub mod msp;
+    pub mod lifecycle;
     pub mod orderer;
     pub mod protos;
     #[cfg(feature = "chaincode")]

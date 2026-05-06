@@ -4,4 +4,6 @@ pub mod client;
 #[cfg(any(feature = "client", feature = "client-wasm"))]
 pub mod discovery;
 #[cfg(any(feature = "client", feature = "client-wasm"))]
+pub mod lifecycle;
+#[cfg(any(feature = "client", feature = "client-wasm"))]
 pub mod snapshot;

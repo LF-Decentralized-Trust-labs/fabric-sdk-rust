@@ -250,6 +250,12 @@ impl Client {
         }
     }
 
+    /// Creates a [`LifecycleClient`] for managing chaincode lifecycle operations
+    /// (install, approve, commit, and query) on this peer connection.
+    pub fn get_lifecycle_client(&self) -> crate::gateway::lifecycle::LifecycleClient<'_> {
+        crate::gateway::lifecycle::LifecycleClient::new(self)
+    }
+
     /// Creates a new SnapshotClientWrapper for interacting with the Snapshot service.
     /// The channel must be connected before calling this method.
     #[cfg(not(feature = "client-wasm"))]
