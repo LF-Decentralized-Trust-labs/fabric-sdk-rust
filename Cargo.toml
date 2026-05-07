@@ -11,6 +11,7 @@ Interact and program chaincode for the Hyperledger Fabric blockchain network
 repository="https://github.com/LF-Decentralized-Trust-labs/fabric-sdk-rust"
 keywords = ["fabric", "blockchain", "hyperledger", "smart-contract", "web3"]
 readme="README.md"
+exclude = ["tests/resources/*"]
 
 [dependencies]
 #Chaincode
