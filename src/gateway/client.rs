@@ -212,7 +212,13 @@ impl Client {
             Ok(response) => {
                 let inner = response.into_inner();
                 match inner.result {
-                    Some(result) => Ok(result.payload),
+                    Some(result) => {
+                        if result.status != 200 {
+                            Err(SubmitError::NodeError(result.message))
+                        } else {
+                            Ok(result.payload)
+                        }
+                    }
                     None => Err(SubmitError::NoPayload),
                 }
             }
