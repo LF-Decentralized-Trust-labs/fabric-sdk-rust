@@ -52,7 +52,7 @@ impl Envelope {
         match gateway_client.submit(submit_request).await {
             Ok(_) => Ok(self),
             Err(err) => Err(SubmitError::NodeError(
-                String::from_utf8_lossy(err.details()).into_owned(),
+                crate::implement::grpc_error::format_grpc_error(&err),
             )),
         }
     }

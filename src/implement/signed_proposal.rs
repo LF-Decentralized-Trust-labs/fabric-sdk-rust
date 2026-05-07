@@ -43,7 +43,9 @@ impl SignedProposal {
                 Some(envelope) => Ok(envelope),
                 None => Err(SubmitError::EmptyRespone),
             },
-            Err(err) => Err(SubmitError::NodeError(err.to_string())),
+            Err(err) => Err(SubmitError::NodeError(
+                crate::implement::grpc_error::format_grpc_error(&err),
+            )),
         }
     }
 }

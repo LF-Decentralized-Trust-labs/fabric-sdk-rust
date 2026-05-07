@@ -1,5 +1,6 @@
 /// This mod contains general functions used across different implementations
 pub mod crypto;
+pub(crate) mod grpc_error;
 /// Implementation for the Envelope proto struct
 pub mod envelope;
 /// Implementation for the Header proto struct

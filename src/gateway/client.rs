@@ -138,7 +138,7 @@ impl Client {
         match response {
             Ok(response) => Ok(response.into_inner().results),
             Err(err) => Err(SubmitError::NodeError(
-                String::from_utf8_lossy(err.details()).into_owned(),
+                crate::implement::grpc_error::format_grpc_error(&err),
             )),
         }
     }
@@ -174,7 +174,7 @@ impl Client {
         match response {
             Ok(response) => Ok(response.into_inner()),
             Err(err) => Err(SubmitError::NodeError(
-                String::from_utf8_lossy(err.details()).into_owned(),
+                crate::implement::grpc_error::format_grpc_error(&err),
             )),
         }
     }
@@ -217,7 +217,7 @@ impl Client {
                 }
             }
             Err(err) => Err(SubmitError::NodeError(
-                String::from_utf8_lossy(err.details()).into_owned(),
+                crate::implement::grpc_error::format_grpc_error(&err),
             )),
         }
     }
@@ -281,7 +281,9 @@ impl Client {
         .max_decoding_message_size(usize::MAX);
         match endorser_client.process_proposal(signed_proposal).await {
             Ok(response) => Ok(response.into_inner()),
-            Err(err) => Err(SubmitError::NodeError(err.to_string())),
+            Err(err) => Err(SubmitError::NodeError(
+                crate::implement::grpc_error::format_grpc_error(&err),
+            )),
         }
     }
 
