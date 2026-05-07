@@ -3,6 +3,7 @@ use prost::Message;
 use crate::{
     error::LifecycleError,
     fabric::{
+        common::{Envelope, Payload},
         gateway::CommitStatusResponse,
         lifecycle::{
             ApproveChaincodeDefinitionForMyOrgArgs, CheckCommitReadinessArgs,
@@ -16,7 +17,10 @@ use crate::{
             QueryInstalledChaincodeResult, QueryInstalledChaincodesArgs,
             QueryInstalledChaincodesResult,
         },
-        protos::SignedProposal,
+        protos::{
+            ChaincodeActionPayload, ChaincodeEndorsedAction, ProposalResponse, SignedProposal,
+            Transaction, TransactionAction,
+        },
     },
     gateway::client::Client,
 };
@@ -76,6 +80,9 @@ impl<'a> LifecycleClient<'a> {
     ///
     /// Returns the [`InstallChaincodeResult`] containing the `package_id` and `label`.
     /// The `package_id` is needed for the approve step.
+    ///
+    /// Install is not a channel operation, so this bypasses the Gateway API and calls the
+    /// peer's legacy `Endorser.ProcessProposal` RPC directly.
     pub async fn install_chaincode(
         &self,
         package: Vec<u8>,
@@ -86,20 +93,21 @@ impl<'a> LifecycleClient<'a> {
         let signed_proposal =
             self.build_lifecycle_proposal("", "InstallChaincode", args.encode_to_vec())?;
 
-        let envelope = signed_proposal
-            .endorse(self.client)
+        let proposal_response = self
+            .client
+            .process_proposal(signed_proposal)
             .await
             .map_err(LifecycleError::from)?;
 
-        let result_bytes = envelope
-            .get_payload()
-            .map_err(|_| LifecycleError::DecodeError("Failed to decode payload"))?
-            .get_transaction()
-            .map_err(|_| LifecycleError::DecodeError("Failed to decode transaction"))?
-            .get_result()
+        let response = proposal_response
+            .response
             .ok_or(LifecycleError::EmptyResponse)?;
 
-        InstallChaincodeResult::decode(result_bytes.as_slice())
+        if response.status != 200 {
+            return Err(LifecycleError::NodeError(response.message));
+        }
+
+        InstallChaincodeResult::decode(response.payload.as_slice())
             .map_err(|_| LifecycleError::DecodeError("Failed to decode InstallChaincodeResult"))
     }
 
@@ -172,20 +180,9 @@ impl<'a> LifecycleClient<'a> {
             args.encode_to_vec(),
         )?;
 
-        let mut envelope = signed_proposal
-            .endorse(self.client)
-            .await
-            .map_err(LifecycleError::from)?;
-
-        envelope
-            .submit(self.client)
-            .await
-            .map_err(LifecycleError::from)?;
-
-        envelope
-            .wait_for_commit(self.client)
-            .await
-            .map_err(LifecycleError::from)
+        let mut envelope = self.endorse_lifecycle(signed_proposal).await?;
+        envelope.submit(self.client).await.map_err(LifecycleError::from)?;
+        envelope.wait_for_commit(self.client).await.map_err(LifecycleError::from)
     }
 
     /// Check whether enough organizations have approved the given chaincode definition.
@@ -209,10 +206,15 @@ impl<'a> LifecycleClient<'a> {
     ///
     /// This endorses the commit transaction and submits it to the orderer.
     /// Waits for the transaction to be committed before returning.
+    ///
+    /// `endorsing_peers` must contain a client for every additional organization whose
+    /// endorsement is required by the channel's `LifecycleEndorsement` policy.  For a
+    /// two-org network (MAJORITY = both), pass the Org2 admin client here.
     pub async fn commit_chaincode_definition(
         &self,
         channel_name: impl Into<String>,
         args: CommitChaincodeDefinitionArgs,
+        endorsing_peers: &[&Client],
     ) -> Result<CommitStatusResponse, LifecycleError> {
         let channel = channel_name.into();
         let signed_proposal = self.build_lifecycle_proposal(
@@ -221,20 +223,13 @@ impl<'a> LifecycleClient<'a> {
             args.encode_to_vec(),
         )?;
 
-        let mut envelope = signed_proposal
-            .endorse(self.client)
-            .await
-            .map_err(LifecycleError::from)?;
+        let mut all_peers: Vec<&Client> = vec![self.client];
+        all_peers.extend_from_slice(endorsing_peers);
 
-        envelope
-            .submit(self.client)
-            .await
-            .map_err(LifecycleError::from)?;
-
-        envelope
-            .wait_for_commit(self.client)
-            .await
-            .map_err(LifecycleError::from)
+        let responses = self.collect_endorsements(&signed_proposal, &all_peers).await?;
+        let mut envelope = self.build_envelope(signed_proposal, responses)?;
+        envelope.submit(self.client).await.map_err(LifecycleError::from)?;
+        envelope.wait_for_commit(self.client).await.map_err(LifecycleError::from)
     }
 
     /// Query a committed chaincode definition by name on the given channel.
@@ -321,6 +316,98 @@ impl<'a> LifecycleClient<'a> {
         })
     }
 
+    /// Endorses a `_lifecycle` proposal on the local peer and assembles the resulting `Envelope`.
+    async fn endorse_lifecycle(
+        &self,
+        signed_proposal: SignedProposal,
+    ) -> Result<Envelope, LifecycleError> {
+        let responses = self.collect_endorsements(&signed_proposal, &[self.client]).await?;
+        self.build_envelope(signed_proposal, responses)
+    }
+
+    /// Sends `signed_proposal` to every peer in `peers` and returns all `ProposalResponse`s.
+    async fn collect_endorsements(
+        &self,
+        signed_proposal: &SignedProposal,
+        peers: &[&Client],
+    ) -> Result<Vec<ProposalResponse>, LifecycleError> {
+        let mut responses = Vec::with_capacity(peers.len());
+        for peer in peers {
+            let response = peer
+                .process_proposal(signed_proposal.clone())
+                .await
+                .map_err(LifecycleError::from)?;
+            responses.push(response);
+        }
+        Ok(responses)
+    }
+
+    /// Assembles a signed `Envelope` from a proposal and the collected endorsements.
+    ///
+    /// `proposal_response_payload` is taken from the first response (all peers must return
+    /// the same read-write set for a deterministic chaincode).  All endorsement signatures
+    /// are combined into a single `ChaincodeEndorsedAction`.
+    fn build_envelope(
+        &self,
+        signed_proposal: SignedProposal,
+        responses: Vec<ProposalResponse>,
+    ) -> Result<Envelope, LifecycleError> {
+        if responses.is_empty() {
+            return Err(LifecycleError::EmptyResponse);
+        }
+
+        for pr in &responses {
+            let response = pr.response.as_ref().ok_or(LifecycleError::EmptyResponse)?;
+            if response.status != 200 {
+                return Err(LifecycleError::NodeError(response.message.clone()));
+            }
+        }
+
+        let mut iter = responses.into_iter();
+        let first = iter.next().unwrap();
+        let proposal_response_payload = first.payload;
+        let mut endorsements: Vec<_> = first.endorsement.into_iter().collect();
+        for pr in iter {
+            endorsements.extend(pr.endorsement.into_iter());
+        }
+
+        let proposal = signed_proposal
+            .get_proposal()
+            .map_err(|_| LifecycleError::DecodeError("Failed to decode proposal"))?;
+
+        let header = proposal
+            .get_header()
+            .map_err(|_| LifecycleError::DecodeError("Failed to decode header"))?;
+
+        let chaincode_action_payload = ChaincodeActionPayload {
+            chaincode_proposal_payload: proposal.payload,
+            action: Some(ChaincodeEndorsedAction {
+                proposal_response_payload,
+                endorsements,
+            }),
+        };
+
+        let transaction = Transaction {
+            actions: vec![TransactionAction {
+                header: header.signature_header.clone(),
+                payload: chaincode_action_payload.encode_to_vec(),
+            }],
+        };
+
+        let payload = Payload {
+            header: Some(header),
+            data: transaction.encode_to_vec(),
+        };
+
+        let payload_bytes = payload.encode_to_vec();
+        let signature = self.client.identity.sign_message(&payload_bytes);
+
+        Ok(Envelope {
+            payload: payload_bytes,
+            signature,
+        })
+    }
+
     fn build_lifecycle_proposal(
         &self,
         channel_name: &str,
@@ -353,6 +440,26 @@ impl<'a> LifecycleClient<'a> {
     ) -> Result<Vec<u8>, LifecycleError> {
         let signed_proposal =
             self.build_lifecycle_proposal(channel_name, function_name, args_bytes)?;
+
+        // Channel-less operations (e.g. QueryInstalledChaincodes) bypass the Gateway API,
+        // which requires a valid channel_id. Use ProcessProposal directly instead.
+        if channel_name.is_empty() {
+            let proposal_response = self
+                .client
+                .process_proposal(signed_proposal)
+                .await
+                .map_err(LifecycleError::from)?;
+
+            let response = proposal_response
+                .response
+                .ok_or(LifecycleError::EmptyResponse)?;
+
+            if response.status != 200 {
+                return Err(LifecycleError::NodeError(response.message));
+            }
+
+            return Ok(response.payload);
+        }
 
         let channel_header = signed_proposal
             .get_proposal()

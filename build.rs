@@ -26,6 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "fabric-protos/discovery/protocol.proto",
                 "fabric-protos/gossip/message.proto", // Needed for protocol.proto
                 "fabric-protos/peer/lifecycle/lifecycle.proto",
+                "fabric-protos/peer/peer.proto",
             ],
             &["fabric-protos"],
         )?;

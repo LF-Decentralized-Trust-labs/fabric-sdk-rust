@@ -10,7 +10,10 @@ use crate::{
             SubmitRequest, gateway_client::GatewayClient,
         },
         orderer::{SeekPosition, SeekSpecified},
-        protos::{ChaincodeAction, ChaincodeActionPayload, ProposalResponsePayload, SignedProposal, Transaction},
+        protos::{
+            ChaincodeAction, ChaincodeActionPayload, ProposalResponse, ProposalResponsePayload,
+            SignedProposal, Transaction, endorser_client::EndorserClient,
+        },
     },
     gateway::{
         chaincode::ChaincodeCallBuilder,
@@ -254,6 +257,32 @@ impl Client {
     /// (install, approve, commit, and query) on this peer connection.
     pub fn get_lifecycle_client(&self) -> crate::gateway::lifecycle::LifecycleClient<'_> {
         crate::gateway::lifecycle::LifecycleClient::new(self)
+    }
+
+    /// Sends a signed proposal directly to the peer's legacy `Endorser.ProcessProposal` RPC.
+    ///
+    /// Used for channel-less lifecycle operations (e.g. install chaincode) that cannot
+    /// go through the Gateway API, which requires a valid channel ID.
+    pub async fn process_proposal(
+        &self,
+        signed_proposal: SignedProposal,
+    ) -> Result<ProposalResponse, SubmitError> {
+        if self.tonic_connection.channel.is_none() {
+            return Err(SubmitError::NotConnected);
+        }
+        let mut endorser_client = EndorserClient::new(
+            self.tonic_connection
+                .channel
+                .as_ref()
+                .expect("Expected value is none.")
+                .clone(),
+        )
+        .max_encoding_message_size(usize::MAX)
+        .max_decoding_message_size(usize::MAX);
+        match endorser_client.process_proposal(signed_proposal).await {
+            Ok(response) => Ok(response.into_inner()),
+            Err(err) => Err(SubmitError::NodeError(err.to_string())),
+        }
     }
 
     /// Creates a new SnapshotClientWrapper for interacting with the Snapshot service.
