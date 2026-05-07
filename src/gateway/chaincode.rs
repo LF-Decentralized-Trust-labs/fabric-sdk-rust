@@ -324,15 +324,18 @@ pub(crate) fn generate_chaincode_definition(
     function_name: String,
     function_args: Vec<Vec<u8>>,
 ) -> ChaincodeProposalPayload {
-    let mut args = if let Some(contract_id) = contract_id {
-        vec![
-            format!("{}:{}", contract_id, function_name)
-                .as_bytes()
-                .to_vec(),
-        ]
-    } else {
-        vec![function_name.as_bytes().to_vec()]
+    // Build the first arg: "ContractName:FunctionName".
+    //
+    // System chaincodes (name starts with '_', e.g. _lifecycle) expect the
+    // bare function name and don't use contract routing.
+    // User-defined chaincodes use the contract model where the chaincode name
+    // doubles as the default contract name; an explicit contract_id overrides.
+    let routing = match contract_id {
+        Some(id) => format!("{}:{}", id, function_name),
+        None if chaincode_id.name.starts_with('_') => function_name.clone(),
+        None => format!("{}:{}", chaincode_id.name, function_name),
     };
+    let mut args = vec![routing.into_bytes()];
     for function_arg in function_args {
         args.push(function_arg);
     }

@@ -11,9 +11,9 @@ use crate::{
         common::{ChannelHeader, Header, SignatureHeader},
         protos::{
             ChaincodeEvent, ChaincodeMessage, DelState, GetHistoryForKey, GetState, GetStateByRange,
-            GetStateMetadata, GetStateMultiple, GetStateMultipleResult, PutState, PutStateMetadata,
-            QueryResponse, QueryStateNext, SignedProposal, StateMetadata, StateMetadataResult,
-            chaincode_message,
+            GetStateMetadata, GetStateMultiple, GetStateMultipleResult, Proposal, PurgePrivateState,
+            PutState, PutStateMetadata, QueryResponse, QueryStateNext, SignedProposal, StateMetadata,
+            StateMetadataResult, chaincode_message,
         },
         queryresult::Kv,
     },
@@ -260,7 +260,7 @@ impl Context {
         let payload = PutStateMetadata {
             key: key.to_string(),
             collection: String::new(), //TODO Implement Collection (private write set)
-            metadata: StateMetadataResult { entries: metadata },
+            metadata: metadata.into_iter().next(),
         }
         .encode_to_vec();
         let message_context = self.message.clone();
