@@ -20,10 +20,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "fabric-protos/common/common.proto",
                 "fabric-protos/peer/chaincode.proto",
                 "fabric-protos/peer/chaincode_shim.proto",
+                "fabric-protos/peer/snapshot.proto",
                 "fabric-protos/msp/identities.proto",
                 "fabric-protos/ledger/queryresult/kv_query_result.proto",
                 "fabric-protos/discovery/protocol.proto",
                 "fabric-protos/gossip/message.proto", // Needed for protocol.proto
+                "fabric-protos/peer/lifecycle/lifecycle.proto",
+                "fabric-protos/peer/peer.proto",
             ],
             &["fabric-protos"],
         )?;

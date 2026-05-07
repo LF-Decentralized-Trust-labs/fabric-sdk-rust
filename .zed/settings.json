@@ -1,0 +1,44 @@
+// Folder-specific settings
+//
+// For a full list of overridable settings, and general information on folder-specific settings,
+// see the documentation: https://zed.dev/docs/configuring-zed#settings-files
+{
+    "lsp": {
+        "rust-analyzer": {
+            "enable_lsp_tasks": true,
+            "initialization_options": {
+                "inlayHints": {
+                    "maxLength": null,
+                    "lifetimeElisionHints": {
+                        "enable": "skip_trivial",
+                        "useParameterNames": true,
+                    },
+                    "closureReturnTypeHints": {
+                        "enable": "always",
+                    },
+                },
+                "check": {
+                    "command": "clippy", // Uses clippy for linting instead of default 'check'
+                },
+                "import": {
+                    "enable": true,
+                    "rename": "use",
+                },
+                "diagnostic": {
+                    "enable": true,
+                    "quickFix": {
+                        "enable": true,
+                    },
+                },
+                "cargo": {
+                    "loadWorkspaceMembers": true,
+                    "buildScriptInRoot": true,
+                    //"features": "all",
+                },
+                "rustfmt": {
+                    "extraArgs": ["+nightly"],
+                },
+            },
+        },
+    },
+}

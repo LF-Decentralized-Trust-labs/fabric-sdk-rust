@@ -4,22 +4,15 @@ use crate::{
     error::BuilderError,
     fabric::{
         common::{ChannelHeader, Header, HeaderType, SignatureHeader},
-        gateway::EndorseRequest,
         protos::{
             ChaincodeHeaderExtension, ChaincodeId, ChaincodeInput, ChaincodeInvocationSpec,
             ChaincodeProposalPayload, ChaincodeSpec, Proposal, SignedProposal,
         },
     },
     identity::Identity,
-    transaction::{NONCE_LENGTH, generate_nonce, generate_transaction_id},
+    implement::crypto::{NONCE_LENGTH, generate_nonce, generate_transaction_id},
 };
 
-/// A prepared chaincode call is ready to be submitted to the network.
-/// This struct is being used by the [`submit_chaincode_call()`](submit_chaincode_call) from the [`Client`](Client).
-pub struct PreparedChaincodeCall {
-    pub(crate) channel_name: String,
-    pub(crate) endorse_request: EndorseRequest,
-}
 pub struct ChaincodeCallBuilder {
     pub(crate) identity: Identity,
     pub(crate) channel_name: Option<String>,
@@ -96,28 +89,28 @@ impl ChaincodeCallBuilder {
         }
         Ok(self)
     }
-    ///Statically sets the proposal. If the propsal is none, the builder will generate a new one every time building a transaction
+    /// Statically sets the proposal. If the propsal is none, the builder will generate a new one every time building a transaction
     pub fn with_proposal(&mut self, signed_proposal: Option<SignedProposal>) -> &mut Self {
         self.proposal = signed_proposal;
         self
     }
-    ///Statically sets the header. If the header is none, the builder will generate a new one every time building a transaction
+    /// Statically sets the header. If the header is none, the builder will generate a new one every time building a transaction
     pub fn with_header(&mut self, signed_proposal: Option<SignedProposal>) -> &mut Self {
         self.proposal = signed_proposal;
         self
     }
-    ///Statically sets the nonce. If the nonce is none, the builder will generate a new one every time building a transaction
+    /// Statically sets the nonce. If the nonce is none, the builder will generate a new one every time building a transaction
     pub fn with_nonce(&mut self, nonce: Option<[u8; NONCE_LENGTH]>) -> &mut Self {
         self.nonce = nonce;
         self
     }
-    ///Statically sets the transaction id. If the transaction id is none, the builder will generate a new one every time building a transaction
+    /// Statically sets the transaction id. If the transaction id is none, the builder will generate a new one every time building a transaction
     pub fn with_transaction_id(&mut self, transaction_id: Option<String>) -> &mut Self {
         self.transaction_id = transaction_id;
         self
     }
 
-    pub fn build(&self) -> Result<PreparedChaincodeCall, BuilderError> {
+    pub fn build(&self) -> Result<SignedProposal, BuilderError> {
         if self.chaincode_id.is_none() {
             return Err(BuilderError::MissingParameter("chaincode_id".into()));
         }
@@ -158,7 +151,7 @@ impl ChaincodeCallBuilder {
         &self,
         extension: Vec<u8>,
         payload: Vec<u8>,
-    ) -> Result<PreparedChaincodeCall, BuilderError> {
+    ) -> Result<SignedProposal, BuilderError> {
         let nonce = match self.nonce {
             Some(nonce) => nonce,
             None => generate_nonce(),
@@ -181,16 +174,7 @@ impl ChaincodeCallBuilder {
             Some(proposal) => proposal.clone(),
             None => self.generate_proposal(&header, extension, payload),
         };
-        let endorse_request = EndorseRequest {
-            transaction_id,
-            channel_id: self.channel_name.clone().unwrap_or_default(),
-            proposed_transaction: Some(signed_proposal),
-            endorsing_organizations: vec![], //Currently empty since private data is not implemented yet
-        };
-        Ok(PreparedChaincodeCall {
-            channel_name: self.channel_name.clone().unwrap_or_default(),
-            endorse_request,
-        })
+        Ok(signed_proposal)
     }
     ///Generates a message from a chaincode. This is only needed for the chaincode feature.
     /// This method neither requiers function name or function args
@@ -340,15 +324,18 @@ pub(crate) fn generate_chaincode_definition(
     function_name: String,
     function_args: Vec<Vec<u8>>,
 ) -> ChaincodeProposalPayload {
-    let mut args = if let Some(contract_id) = contract_id {
-        vec![
-            format!("{}:{}", contract_id, function_name)
-                .as_bytes()
-                .to_vec(),
-        ]
-    } else {
-        vec![function_name.as_bytes().to_vec()]
+    // Build the first arg: "ContractName:FunctionName".
+    //
+    // System chaincodes (name starts with '_', e.g. _lifecycle) expect the
+    // bare function name and don't use contract routing.
+    // User-defined chaincodes use the contract model where the chaincode name
+    // doubles as the default contract name; an explicit contract_id overrides.
+    let routing = match contract_id {
+        Some(id) => format!("{}:{}", id, function_name),
+        None if chaincode_id.name.starts_with('_') => function_name.clone(),
+        None => format!("{}:{}", chaincode_id.name, function_name),
     };
+    let mut args = vec![routing.into_bytes()];
     for function_arg in function_args {
         args.push(function_arg);
     }

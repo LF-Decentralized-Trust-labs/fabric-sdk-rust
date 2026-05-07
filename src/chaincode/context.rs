@@ -10,8 +10,10 @@ use crate::{
     fabric::{
         common::{ChannelHeader, Header, SignatureHeader},
         protos::{
-            ChaincodeEvent, ChaincodeMessage, DelState, GetState, GetStateByRange, Proposal,
-            PutState, QueryResponse, QueryStateNext, SignedProposal, chaincode_message,
+            ChaincodeEvent, ChaincodeMessage, DelState, GetHistoryForKey, GetState, GetStateByRange,
+            GetStateMetadata, GetStateMultiple, GetStateMultipleResult, Proposal, PurgePrivateState,
+            PutState, PutStateMetadata, QueryResponse, QueryStateNext, SignedProposal, StateMetadata,
+            StateMetadataResult, chaincode_message,
         },
         queryresult::Kv,
     },
@@ -145,6 +147,127 @@ impl Context {
             .lock()
             .await
             .respond(chaincode_message::Type::DelState, payload, message_context)
+            .await;
+        self.peer_response_queue
+            .lock()
+            .await
+            .next()
+            .await
+            .expect("[Context] Failed to receive response from channel");
+    }
+
+    pub async fn get_history_for_key(&self, key: &str) -> HistoryResult {
+        let payload = GetHistoryForKey {
+            key: key.to_string(),
+        }
+        .encode_to_vec();
+        let message_context = self.message.clone();
+        self.message_builder
+            .lock()
+            .await
+            .respond(chaincode_message::Type::GetHistoryForKey, payload, message_context)
+            .await;
+        let response = self
+            .peer_response_queue
+            .lock()
+            .await
+            .next()
+            .await
+            .expect("[Context] Failed to receive response from channel");
+        let query_response = QueryResponse::decode(response.payload.as_slice())
+            .expect("[Context] Invalid query response");
+        HistoryResult::new(
+            self.message_builder.clone(),
+            self.peer_response_queue.clone(),
+            self.message.clone(),
+            query_response,
+        )
+    }
+
+    pub async fn get_state_metadata(&self, key: &str) -> Vec<StateMetadata> {
+        let payload = GetStateMetadata {
+            key: key.to_string(),
+            collection: String::new(), //TODO Implement Collection (private write set)
+        }
+        .encode_to_vec();
+        let message_context = self.message.clone();
+        self.message_builder
+            .lock()
+            .await
+            .respond(chaincode_message::Type::GetStateMetadata, payload, message_context)
+            .await;
+        let response = self
+            .peer_response_queue
+            .lock()
+            .await
+            .next()
+            .await
+            .expect("[Context] Failed to receive response from channel");
+        let result = StateMetadataResult::decode(response.payload.as_slice())
+            .expect("[Context] Invalid state metadata result");
+        result.entries
+    }
+
+    pub async fn get_state_multiple(&self, keys: Vec<String>) -> Vec<Vec<u8>> {
+        let payload = GetStateMultiple {
+            keys,
+            collection: String::new(), //TODO Implement Collection (private write set)
+        }
+        .encode_to_vec();
+        let message_context = self.message.clone();
+        self.message_builder
+            .lock()
+            .await
+            .respond(chaincode_message::Type::GetStateMultiple, payload, message_context)
+            .await;
+        let response = self
+            .peer_response_queue
+            .lock()
+            .await
+            .next()
+            .await
+            .expect("[Context] Failed to receive response from channel");
+        let result = GetStateMultipleResult::decode(response.payload.as_slice())
+            .expect("[Context] Invalid get state multiple result");
+        result.values
+    }
+
+    pub async fn purge_private_state(&self, key: &str, collection: &str) {
+        let payload = PurgePrivateState {
+            key: key.to_string(),
+            collection: collection.to_string(),
+        }
+        .encode_to_vec();
+        let message_context = self.message.clone();
+        self.message_builder
+            .lock()
+            .await
+            .respond(chaincode_message::Type::PurgePrivateData, payload, message_context)
+            .await;
+        self.peer_response_queue
+            .lock()
+            .await
+            .next()
+            .await
+            .expect("[Context] Failed to receive response from channel");
+    }
+
+    pub async fn put_state_metadata(
+        &self,
+        key: &str,
+        metadata: Vec<StateMetadata>,
+    ) {
+        let payload = PutStateMetadata {
+            key: key.to_string(),
+            collection: String::new(), //TODO Implement Collection (private write set)
+            metadata: metadata.into_iter().next(),
+        }
+        .encode_to_vec();
+        let message_context = self.message.clone();
+        self.message_builder
+            .lock()
+            .await
+            .respond(chaincode_message::Type::PutStateMetadata, payload, message_context)
             .await;
         self.peer_response_queue
             .lock()
@@ -300,3 +423,95 @@ impl Iterator for RangeResult {
         }
     }
 }
+
+pub struct HistoryResult {
+    message_builder: Arc<Mutex<MessageBuilder>>,
+    peer_response_queue: Arc<Mutex<Receiver<ChaincodeMessage>>>,
+    message: ChaincodeMessage,
+    query_response: QueryResponse,
+    results: Vec<Vec<u8>>,
+    index: usize,
+}
+
+impl HistoryResult {
+    pub fn new(
+        message_builder: Arc<Mutex<MessageBuilder>>,
+        peer_response_queue: Arc<Mutex<Receiver<ChaincodeMessage>>>,
+        message: ChaincodeMessage,
+        query_response: QueryResponse,
+    ) -> Self {
+        let results = query_response
+            .results
+            .iter()
+            .map(|f| Kv::decode(f.result_bytes.as_slice()).expect("Invalid KV"))
+            .map(|f| f.value)
+            .collect::<Vec<Vec<u8>>>();
+        HistoryResult {
+            message_builder,
+            peer_response_queue,
+            message,
+            query_response,
+            results,
+            index: 0,
+        }
+    }
+}
+
+impl Iterator for HistoryResult {
+    type Item = Vec<u8>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.results.len() {
+            //We still have some results in our buffer
+            self.index += 1;
+            self.results.get(self.index - 1).cloned()
+        } else {
+            //our buffer has been iterated through -> check if the node has more
+            if self.query_response.has_more {
+                //Request more from node
+                let payload = QueryStateNext {
+                    id: self.query_response.id.clone(),
+                }
+                .encode_to_vec();
+                let message_context = self.message.clone();
+                let message_builder = self.message_builder.clone();
+                tokio::spawn(async move {
+                    message_builder
+                        .lock()
+                        .await
+                        .respond(
+                            chaincode_message::Type::QueryStateNext,
+                            payload,
+                            message_context,
+                        )
+                        .await;
+                });
+                loop {
+                    match self.peer_response_queue.blocking_lock().try_next() {
+                        Ok(Some(response)) => {
+                            let query_response = QueryResponse::decode(response.payload.as_slice())
+                                .expect("[Context] Invalid query response");
+                            self.query_response = query_response;
+                            self.index = 1;
+                            self.results = self
+                                .query_response
+                                .results
+                                .iter()
+                                .map(|f| Kv::decode(f.result_bytes.as_slice()).expect("Invalid KV"))
+                                .map(|f| f.value)
+                                .collect::<Vec<Vec<u8>>>();
+                            return self.results.first().cloned();
+                        }
+                        Ok(None) => {
+                            panic!("[Context] Query Channel is closed")
+                        }
+                        Err(_) => {}
+                    }
+                }
+            } else {
+                None
+            }
+        }
+    }
+}
+

@@ -2,7 +2,7 @@
 
 The crate can be used via crates.io:
 ```toml
-fabric-sdk = "0.4.0"
+fabric-sdk = "0.5.0"
 ```
 
 Here is an simple code example how to use the library:
@@ -38,24 +38,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .with_function_name("CreateAsset")?
         .with_function_args(["assetCustom", "orange", "10", "Frank", "600"])?;
     match tx_builder.build() {
-        Ok(prepared_transaction) => client.submit_transaction(prepared_transaction).await {
-            Ok(result) => {
-                println!("{}", String::from_utf8_lossy(result.as_slice()));
+        Ok(prepared_transaction) -> prepared_transaction.endorse(&client).await {
+            Ok(envelope) -> {
+                // To have persistent changes, the envelope has to be submitted
+                envelope.submit(&client).await.expect("Submit error");
+                // To be certain, that the envelope has been submitted and therefore the changes be written into the ledger, we wait for the commit.
+                envelope.wait_for_commit(&client).await.expect("Error while waiting for commit");
+                let function_call_result = envelope.get_payload().unwrap().get_transaction().unwrap().get_result_string().unwrap()
+                println!("{function_call_result}"));
             }
-            Err(err) => println!("{}", err),
+            Err(err) -> println!("{}", err),
         },
-        Err(err) => println!("{}", err),
-    }
-
-    tx_builder.with_function_args(["assetCustom", "orange", "0", "AnotherFrank", "100"])?;
-    match tx_builder.build() {
-        Ok(prepared_transaction) => match client.submit_transaction(prepared_transaction).await {
-            Ok(result) => {
-                println!("{}", String::from_utf8_lossy(result.as_slice()));
-            }
-            Err(err) => println!("{}", err),
-        },
-        Err(err) => println!("{}", err),
+        Err(err) -> println!("{}", err),
     }
     Ok(())
 }
