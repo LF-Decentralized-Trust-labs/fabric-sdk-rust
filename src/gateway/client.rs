@@ -18,11 +18,12 @@ use crate::{
     gateway::{
         chaincode::ChaincodeCallBuilder,
         discovery::{DiscoveryCallBuilder, PreparedDiscoveryCall},
-        snapshot,
     },
     identity::Identity,
     implement::crypto::{generate_nonce, generate_transaction_id},
 };
+#[cfg(not(feature = "client-wasm"))]
+use crate::gateway::snapshot;
 use prost::Message;
 
 pub struct Client {
@@ -44,7 +45,19 @@ pub(crate) struct TonicConnection {
 }
 
 impl Client {
+    #[cfg(not(feature = "client-wasm"))]
     pub(crate) fn create_gateway(&self) -> GatewayClient<tonic::transport::Channel> {
+        GatewayClient::new(
+            self.tonic_connection
+                .channel
+                .as_ref()
+                .expect("Expected value is none.")
+                .clone(),
+        )
+    }
+
+    #[cfg(feature = "client-wasm")]
+    pub(crate) fn create_gateway(&self) -> GatewayClient<tonic_web_wasm_client::Client> {
         GatewayClient::new(
             self.tonic_connection
                 .channel
