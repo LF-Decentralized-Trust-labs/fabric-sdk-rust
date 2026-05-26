@@ -155,3 +155,28 @@ If you find yourself missing a method or for any features please open an issue.
 | Method     | Implemented      | Unit Tests | Documentation |
 | - | - | - | - |
 | ProcessProposal | ❌ | ❌ | ❌ |
+
+## [Fabric CA](https://hyperledger-fabric-ca.readthedocs.io/en/latest/)
+
+The Fabric CA is a separate service from the peer gateway and exposes a REST API (not gRPC).
+It manages user and service identities (X.509 certificates) for each organization.
+
+| Method           | Implemented | Integration Tests | Documentation |
+| - | - | - | - |
+| GetCAInfo        | ✅ | ✅ | ✅ |
+| ListIdentities   | ✅ | ✅ | ✅ |
+| GetIdentity      | ✅ | ✅ | ✅ |
+| RegisterIdentity | ✅ | ✅ | ✅ |
+| ModifyIdentity   | ✅ | ✅ | ✅ |
+| RemoveIdentity   | ✅ | ✅ | ✅ |
+| ListAffiliations | ✅ | ✅ | ✅ |
+| GetAffiliation   | ✅ | ✅ | ✅ |
+| Revoke           | ✅ | ✅ | ✅ |
+| Enroll           | ❌ | ❌ | ❌ |
+| Reenroll         | ❌ | ❌ | ❌ |
+
+Required environment variables for Fabric CA integration tests:
+- `FABRIC_CA_URL` — base URL of the CA server, e.g. `https://localhost:7054` (tests are skipped if not set)
+- `PEER1_ADMIN_CERT_PATH` — reused from lifecycle tests (admin enrollment certificate)
+- `PEER1_ADMIN_KEY_PATH` — reused from lifecycle tests (admin private key)
+- `PEER1_TLS_CERT_PATH` — reused from gateway/lifecycle tests (shared TLS root CA certificate)

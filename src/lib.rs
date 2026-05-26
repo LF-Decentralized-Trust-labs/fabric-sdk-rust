@@ -27,6 +27,8 @@ pub mod error;
 pub mod gateway;
 #[cfg(any(feature = "chaincode", feature = "client", feature = "client-wasm"))]
 pub mod identity;
+#[cfg(any(feature = "client", feature = "client-wasm"))]
+pub mod fabric_ca;
 /// Collection of functions for the fabric common structs
 #[cfg(any(feature = "chaincode", feature = "client", feature = "client-wasm"))]
 #[allow(dead_code)]

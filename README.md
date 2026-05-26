@@ -24,6 +24,16 @@ Running chaincode in rust is not yet officially supported and needs some extra c
 
 A list of features and their implementation status can be found [here](doc/implementation_status.md)
 
+## Running the integration tests
+
+The integration tests under `tests/integration/` drive a live Hyperledger Fabric
+test network (peer lifecycle, gateway invocation, and optionally the Fabric CA
+REST API). They require the `fabric-samples` test network to be running and a
+populated `.env` file. See [doc/integration_tests.md](doc/integration_tests.md)
+for the full prerequisites — including why the test network has to be started
+with `./network.sh up createChannel -ca` if you want the Fabric CA portion to
+succeed.
+
 ## Contribute
 
 Contributors are always welcome! Do not hesitate asking any question or for help. The topic can be complex and I we are always glad to support you. To engage with the community you can find some links [here](https://github.com/hyperledger/fabric#Community).
