@@ -75,6 +75,27 @@ impl From<SubmitError> for LifecycleError {
 }
 
 #[derive(Debug)]
+pub enum FabricCAError {
+    NotConfigured,
+    HttpError(String),
+    ParseError(String),
+    CAError(String),
+}
+
+impl std::error::Error for FabricCAError {}
+
+impl std::fmt::Display for FabricCAError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FabricCAError::NotConfigured => write!(f, "Fabric CA client is not configured"),
+            FabricCAError::HttpError(err) => write!(f, "HTTP error: {}", err),
+            FabricCAError::ParseError(err) => write!(f, "Failed to parse CA response: {}", err),
+            FabricCAError::CAError(err) => write!(f, "Fabric CA returned an error: {}", err),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum SubmitError {
     NotConnected,
     NodeError(String),

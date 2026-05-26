@@ -1,4 +1,5 @@
 mod chaincode;
+mod fabric_ca;
 mod lifecycle;
 
 // A single test entry point guarantees lifecycle (deploy) runs before chaincode (use),
@@ -13,5 +14,6 @@ fn test_integration() {
         .block_on(async {
             lifecycle::run().await;
             chaincode::run().await;
+            fabric_ca::run().await;
         });
 }

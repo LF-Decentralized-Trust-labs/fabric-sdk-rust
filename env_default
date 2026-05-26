@@ -14,3 +14,20 @@ CHAINCODE_NAME="basic"
 CONTRACT_NAME=""
 FUNCTION_NAME="GetAllAssets"
 CHAINCODE_VERSION="1.0"
+
+# --- Fabric CA test (optional) ---
+# If FABRIC_CA_URL is not set, the `fabric_ca` integration test is skipped.
+# When set, the test network should have been started with `./network.sh up -ca`
+# so a Fabric CA container is running and a bootstrap admin (admin:adminpw) is
+# enrolled. See doc/integration_tests.md for details.
+FABRIC_CA_URL=https://localhost:7054
+
+# CA bootstrap admin enrolled by `network.sh up -ca`. This identity holds
+# hf.Registrar.Roles=* and can manage other identities. If unset, the test
+# falls back to PEER1_ADMIN_{CERT,KEY}_PATH (which is usually not a registrar).
+CA_ADMIN_CERT_PATH=~/fabric/fabric-samples/test-network/organizations/peerOrganizations/org1.example.com/msp/signcerts/cert.pem
+CA_ADMIN_KEY_PATH=~/fabric/fabric-samples/test-network/organizations/peerOrganizations/org1.example.com/msp/keystore/<hash>_sk
+
+# CA TLS CA cert. If unset, the client falls back to danger_accept_invalid_certs
+# (acceptable for a local test net only).
+CA_TLS_CERT_PATH=~/fabric/fabric-samples/test-network/organizations/peerOrganizations/org1.example.com/ca/ca.org1.example.com-cert.pem

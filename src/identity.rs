@@ -57,6 +57,36 @@ impl Identity {
         }
     }
 
+    /// Generates a Fabric CA authentication token for an HTTP request.
+    ///
+    /// The token format is `base64(cert_PEM).base64(signature)`, where the signature
+    /// covers `method + "." + base64(path) + "." + base64(body) + "." + base64(cert_PEM)`.
+    ///
+    /// The `path` MUST be the exact path (including any percent-encoding) that will be
+    /// sent on the wire; the server signs the request line as received, so a mismatch
+    /// between the signed path and the transmitted path causes authentication failure.
+    ///
+    /// # Arguments
+    /// * `method` - HTTP method in uppercase, e.g. `"GET"`, `"POST"`
+    /// * `path` - URL path component, e.g. `"/api/v1/identities"`
+    /// * `body` - Request body bytes (empty slice for GET/DELETE)
+    #[cfg(any(feature = "client", feature = "client-wasm"))]
+    pub fn generate_fabric_ca_token(&self, method: &str, path: &str, body: &[u8]) -> String {
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD;
+
+        let cert_b64 = b64.encode(&self.cert);
+        let msg = format!(
+            "{}.{}.{}.{}",
+            method,
+            b64.encode(path.as_bytes()),
+            b64.encode(body),
+            cert_b64
+        );
+        let sig = self.sign_message(msg.as_bytes());
+        format!("{}.{}", cert_b64, b64.encode(&sig))
+    }
+
     /// Signs a given message using an ECDSA key derived from PEM bytes.
     /// Ring does not support private-key-only pkcs8 files, which is being used by hyperledger's test network.
     /// Hyperledger uses a normalized s signature. Openssl does not support it so we use ecdsa implementation from RustCrypto https://github.com/RustCrypto/signatures/tree/master/ecdsa which is not verified to be secure
