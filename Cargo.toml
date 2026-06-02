@@ -17,7 +17,7 @@ exclude = ["tests/resources/*"]
 #Chaincode
 tokio = { version = "1.47.1", features = ["rt", "time", "io-util", "sync", "macros"], default-features = false, optional = true }
 futures-util = {version = "0.3.31", optional=true}
-fabric-sdk-derives = { version = "0.1.0", path = "fabric-sdk-derives", optional = true }
+fabric-sdk-derives = { version = "0.1.1", path = "fabric-sdk-derives", optional = true }
 
 hex = {version = "0.4.3", optional = true}
 ecdsa = { version = "0.17.0-rc.16", features = ["der", "pkcs8", "algorithm", "pem", "sha2"], optional = true }
