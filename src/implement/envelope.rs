@@ -1,14 +1,15 @@
 use prost::{DecodeError, Message};
 
+use crate::fabric::common::{Envelope, Payload};
+
+#[cfg(any(feature = "client", feature = "client-wasm"))]
 use crate::{
     error::SubmitError,
-    fabric::{
-        common::{Envelope, Payload},
-        gateway::{CommitStatusResponse, SubmitRequest},
-    },
+    fabric::gateway::{CommitStatusResponse, SubmitRequest},
     implement::crypto::{generate_nonce, generate_transaction_id},
 };
 
+#[cfg(any(feature = "client", feature = "client-wasm"))]
 impl Envelope {
     /// Submits the envelope to the network. This will update the ledger and fill the signature of the envelope.
     pub async fn submit(
@@ -73,7 +74,9 @@ impl Envelope {
             .map_err(|_| SubmitError::DecodeError("Invalid Channel header in payload header"))?;
         client.commit_status(header.tx_id, header.channel_id).await
     }
+}
 
+impl Envelope {
     /// Decodes the payload from the envelope
     pub fn get_payload(&self) -> Result<Payload, DecodeError> {
         Payload::decode(self.payload.as_slice())

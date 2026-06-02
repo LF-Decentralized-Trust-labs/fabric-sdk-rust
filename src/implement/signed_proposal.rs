@@ -1,18 +1,18 @@
 use prost::{DecodeError, Message};
 
-use crate::{
-    error::SubmitError,
-    fabric::{
-        gateway::EndorseRequest,
-        protos::{Proposal, SignedProposal},
-    },
-};
+use crate::fabric::protos::{Proposal, SignedProposal};
+
+#[cfg(any(feature = "client", feature = "client-wasm"))]
+use crate::{error::SubmitError, fabric::gateway::EndorseRequest};
 
 impl SignedProposal {
     pub fn get_proposal(&self) -> Result<Proposal, DecodeError> {
         Proposal::decode(self.proposal_bytes.as_slice())
     }
+}
 
+#[cfg(any(feature = "client", feature = "client-wasm"))]
+impl SignedProposal {
     /// Consumes and sends the endorsement request to the peer and returns the proposed transaction. This will not update the ledger.
     pub async fn endorse(
         self,
