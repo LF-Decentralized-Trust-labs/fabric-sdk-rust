@@ -76,7 +76,14 @@ pub async fn read_asset(ctx: Context, asset_id: String) -> Asset {
 ```
 
 The Context struct provides functions like `put_state` to interact with the ledger.
-Only a small, basic set of methods is currently implemented.
+
+To give the function another callable name you can do that by using this macro:
+
+```rust
+#[transaction(ReadAsset)]
+```
+
+This will make the function be callable via `ReadAsset` to follow the name convention used in the other language implementations (Java,Javascript,Go).
 
 ### Registering functions
 

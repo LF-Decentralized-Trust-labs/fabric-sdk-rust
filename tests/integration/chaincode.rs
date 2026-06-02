@@ -143,10 +143,10 @@ pub async fn run() {
     client.connect().await.unwrap();
 
     // Clean up any assets left over from a previous failed run.
-    try_submit(&client, &channel_name, &chaincode_name, "delete_asset", &["Fish"]).await;
+    try_submit(&client, &channel_name, &chaincode_name, "DeleteAsset", &["Fish"]).await;
 
     // Empty list is to be expected on a fresh deployment.
-    let asset_list = evaluate(&client, &channel_name, &chaincode_name, "get_all_assets", &[]).await;
+    let asset_list = evaluate(&client, &channel_name, &chaincode_name, "GetAllAssets", &[]).await;
     assert_eq!(&asset_list, "[]", "expected empty asset list on fresh ledger");
 
     // Insert an asset and read it back via evaluate.
@@ -154,12 +154,12 @@ pub async fn run() {
         &client,
         &channel_name,
         &chaincode_name,
-        "create_asset",
+        "CreateAsset",
         &["Fish", "Orange", "10", "Frank", "1"],
     )
     .await;
 
-    let frank_the_fish = evaluate(&client, &channel_name, &chaincode_name, "read_asset", &["Fish"]).await;
+    let frank_the_fish = evaluate(&client, &channel_name, &chaincode_name, "ReadAsset", &["Fish"]).await;
     assert_eq!(
         &frank_the_fish,
         "{\"asset_id\":\"Fish\",\"color\":\"Orange\",\"size\":10,\"owner\":\"Frank\",\"appraised_value\":1}",
@@ -167,7 +167,7 @@ pub async fn run() {
     );
 
     // Read the asset list; it should now contain Fish.
-    let asset_list = evaluate(&client, &channel_name, &chaincode_name, "get_all_assets", &[]).await;
+    let asset_list = evaluate(&client, &channel_name, &chaincode_name, "GetAllAssets", &[]).await;
     assert!(
         asset_list.contains("Fish"),
         "asset list should contain Fish, got: {asset_list}"
@@ -178,12 +178,12 @@ pub async fn run() {
         &client,
         &channel_name,
         &chaincode_name,
-        "delete_asset",
+        "DeleteAsset",
         &["Fish"],
     )
     .await;
 
     // Confirm deletion.
-    let asset_list = evaluate(&client, &channel_name, &chaincode_name, "get_all_assets", &[]).await;
+    let asset_list = evaluate(&client, &channel_name, &chaincode_name, "GetAllAssets", &[]).await;
     assert_eq!(&asset_list, "[]", "expected empty asset list after deletion");
 }
