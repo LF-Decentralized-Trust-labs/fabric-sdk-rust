@@ -59,6 +59,61 @@ To run this example you need to have a test network running with fabric samples 
 
 Executing the example twice will result the first one sending an error, that the asset already exists, demonstrating the behavior of an error.
 
+# Private data collections
+
+To submit private data, pass the sensitive values through the transient map with `with_transient` (they are sent to the endorsing peers but never written to the public ledger) and restrict endorsement to the collection's member organizations with `with_endorsing_organizations`. Use `build_prepared()` instead of `build()` so the target organizations survive to the endorse/evaluate call.
+
+```rust
+let mut builder = client.get_chaincode_call_builder();
+let prepared = builder
+    .with_channel_name("mychannel")?
+    .with_chaincode_id("basic")?
+    .with_function_name("CreateAssetPrivate")?
+    .with_endorsing_organizations(["Org1MSP"])
+    .with_transient(
+        "asset_properties",
+        br#"{"asset_id":"asset1","color":"blue","size":5,"owner":"Alice","appraised_value":300}"#.to_vec(),
+    )
+    .build_prepared()?;
+
+let mut envelope = prepared.endorse(&client).await?;
+envelope.submit(&client).await?;
+envelope.wait_for_commit(&client).await?;
+```
+
+For read-only private queries use `evaluate`, which targets the configured organizations' peers (only collection members hold the data):
+
+```rust
+let prepared = client
+    .get_chaincode_call_builder()
+    .with_channel_name("mychannel")?
+    .with_chaincode_id("basic")?
+    .with_function_name("ReadAssetPrivate")?
+    .with_function_args(["asset1"])?
+    .with_endorsing_organizations(["Org1MSP"])
+    .build_prepared()?;
+
+let result = prepared.evaluate(&client).await?;
+```
+
+## Defining collections
+
+Collection definitions (member organizations, endorsement policy, `blockToLive`, etc.) are supplied at chaincode approve/commit time. Build a `CollectionConfigPackage` with `gateway::collection::CollectionConfigBuilder` and pass it in the `collections` field of the approve/commit args:
+
+```rust
+use fabric_sdk::gateway::collection::CollectionConfigBuilder;
+
+let collection = CollectionConfigBuilder::new("assetCollection")
+    .with_member_orgs(["Org1MSP", "Org2MSP"])
+    .with_required_peer_count(0)
+    .with_maximum_peer_count(1)
+    .with_block_to_live(1_000_000)
+    .build();
+
+let collections = Some(CollectionConfigBuilder::package([collection]));
+```
+
+For per-organization storage you can skip collection definitions entirely and use the implicit collection `_implicit_org_<MSPID>`.
 
 # Developing locally
 

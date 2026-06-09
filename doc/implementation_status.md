@@ -43,9 +43,24 @@ If you find yourself missing a method or for any features please open an issue.
 | GetStateByRange | ✅ | 🏻 | 🏻 |
 | GetStateMetadata | ✅ | ❌ | 🏻 |
 | GetStateMultiple | ✅ | ❌ | 🏻 |
-| PurgePrivateState | ✅ | ❌ | 🏻 |
+| GetPrivateDataHash | ✅ | ❌ | 🏻 |
+| PurgePrivateData | ✅ | ❌ | 🏻 |
 | PutState | ✅  | 🏻 | 🏻 |
 | PutStateMetadata | ✅ | ❌ | 🏻 |
+
+### Private Data Collections
+
+Private data is supported on both the client and chaincode sides. The client supplies private values via the transient map (`with_transient`) and steers endorsement to collection member organizations (`with_endorsing_organizations` + `build_prepared`). The chaincode reads/writes collections via the `*_private_data` methods on `Context`. Collection definitions are supplied at approve/commit time via `gateway::collection::CollectionConfigBuilder`.
+
+| Feature     | Implemented      | Tests | Documentation |
+| - | - | - | - |
+| Transient map (client) | ✅ | 🖉 | 🏻 |
+| Endorsing/target organizations | ✅ | 🖉 | 🏻 |
+| Get/Put/Del private data (chaincode) | ✅ | 🖉 | 🏻 |
+| GetPrivateDataHash (chaincode) | ✅ | ❌ | 🏻 |
+| Purge private data (chaincode) | ✅ | ❌ | 🏻 |
+| Private data metadata / validation parameter | ✅ | ❌ | 🏻 |
+| Collection config (lifecycle) | ✅ | ❌ | 🏻 |
 
 ## [ChaincodeSupport](https://hyperledger.github.io/fabric-protos/protos.html#protos-ChaincodeSupport)
 

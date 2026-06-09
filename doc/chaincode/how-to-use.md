@@ -85,6 +85,49 @@ To give the function another callable name you can do that by using this macro:
 
 This will make the function be callable via `ReadAsset` to follow the name convention used in the other language implementations (Java,Javascript,Go).
 
+### Private data collections
+
+The `Context` exposes a set of `*_private_data` methods that mirror the public state functions but operate on a named private data collection. Private values are passed in by the client through the transient map (never written to the public ledger); only a hash of the value is committed to the ledger.
+
+```rust
+use fabric_sdk::prelude::*;
+
+// The org's implicit collection requires no collection definition. Replace the
+// MSP ID with your organization's, or use a named collection defined at commit.
+const COLLECTION: &str = "_implicit_org_Org1MSP";
+
+#[transaction(CreateAssetPrivate)]
+pub async fn create_asset_private(ctx: Context) {
+    // Private data is supplied by the client in the transient map, not as args.
+    let bytes = ctx
+        .get_transient("asset_properties")
+        .expect("missing asset_properties transient");
+    let asset: Asset = serde_json::from_slice(&bytes).expect("invalid asset");
+
+    ctx.put_private_data(COLLECTION, &asset.asset_id, bytes).await;
+}
+
+#[transaction(ReadAssetPrivate)]
+pub async fn read_asset_private(ctx: Context, asset_id: String) -> Asset {
+    let bytes = ctx.get_private_data(COLLECTION, &asset_id).await;
+    serde_json::from_slice(&bytes).expect("invalid or no asset")
+}
+```
+
+Available collection methods on `Context`:
+
+- `get_private_data(collection, key)` / `get_private_data_string(...)`
+- `put_private_data(collection, key, value)` / `put_private_data_string(...)`
+- `del_private_data(collection, key)`
+- `purge_private_data(collection, key)` — removes data and its history entirely
+- `get_private_data_hash(collection, key)` — readable by non-member peers
+- `get_private_data_by_range(collection, start, end)`
+- `get_private_data_metadata(collection, key)` / `put_private_data_metadata(...)`
+- `set_private_data_validation_parameter(collection, key, endorsement_policy)`
+- `get_transient_map()` / `get_transient(key)` — read the client-supplied transient data
+
+Collection definitions (member organizations, endorsement policy, `blockToLive`, etc.) are supplied at chaincode approve/commit time. For per-organization storage you can use the implicit collection `_implicit_org_<MSPID>`, which requires no definition.
+
 ### Registering functions
 
 Functions defined with the `#[fabric_sdk::transaction]` macro needs to be registered via the register function to be accessable from the outside.

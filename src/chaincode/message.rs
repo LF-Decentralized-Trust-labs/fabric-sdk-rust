@@ -30,6 +30,8 @@ impl MessageBuilder {
                 contract_id: None,
                 function_name: None,
                 function_args: vec![],
+                transient_map: std::collections::HashMap::default(),
+                endorsing_organizations: vec![],
                 proposal: None,
                 header: None,
                 nonce: None,

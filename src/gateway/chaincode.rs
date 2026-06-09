@@ -20,6 +20,8 @@ pub struct ChaincodeCallBuilder {
     pub(crate) contract_id: Option<String>,
     pub(crate) function_name: Option<String>,
     pub(crate) function_args: Vec<Vec<u8>>,
+    pub(crate) transient_map: std::collections::HashMap<String, Vec<u8>>,
+    pub(crate) endorsing_organizations: Vec<String>,
     pub(crate) proposal: Option<SignedProposal>,
     pub(crate) header: Option<Header>,
     pub(crate) nonce: Option<[u8; NONCE_LENGTH]>,
@@ -89,6 +91,39 @@ impl ChaincodeCallBuilder {
         }
         Ok(self)
     }
+    /// Adds a single entry to the transient map. Transient data is sent to the
+    /// endorsing peers but never written to the public ledger; it is the
+    /// mechanism for supplying values destined for a private data collection.
+    pub fn with_transient(
+        &mut self,
+        key: impl Into<String>,
+        value: impl Into<Vec<u8>>,
+    ) -> &mut Self {
+        self.transient_map.insert(key.into(), value.into());
+        self
+    }
+
+    /// Replaces the whole transient map.
+    pub fn with_transient_map(
+        &mut self,
+        transient_map: std::collections::HashMap<String, Vec<u8>>,
+    ) -> &mut Self {
+        self.transient_map = transient_map;
+        self
+    }
+
+    /// Restricts endorsement to peers of the given organizations (MSP IDs).
+    /// Required for private data transactions, where only collection member
+    /// organizations are able to endorse.
+    pub fn with_endorsing_organizations<T, U>(&mut self, organizations: T) -> &mut Self
+    where
+        T: IntoIterator<Item = U>,
+        U: Into<String>,
+    {
+        self.endorsing_organizations = organizations.into_iter().map(Into::into).collect();
+        self
+    }
+
     /// Statically sets the proposal. If the propsal is none, the builder will generate a new one every time building a transaction
     pub fn with_proposal(&mut self, signed_proposal: Option<SignedProposal>) -> &mut Self {
         self.proposal = signed_proposal;
@@ -135,6 +170,7 @@ impl ChaincodeCallBuilder {
                 .expect("Expected value is none.")
                 .clone(),
             self.function_args.clone(),
+            self.transient_map.clone(),
         );
 
         let chaincode_header_extension = ChaincodeHeaderExtension {
@@ -145,6 +181,17 @@ impl ChaincodeCallBuilder {
             chaincode_header_extension.encode_to_vec(),
             chaincode_proposal_payload.encode_to_vec(),
         )
+    }
+
+    /// Builds the proposal together with any configured endorsing organizations,
+    /// returning a [PreparedTransaction]. Use this instead of [build](Self::build)
+    /// when working with private data, so the target organizations survive to the
+    /// endorse/evaluate call.
+    pub fn build_prepared(&self) -> Result<PreparedTransaction, BuilderError> {
+        Ok(PreparedTransaction {
+            signed_proposal: self.build()?,
+            endorsing_organizations: self.endorsing_organizations.clone(),
+        })
     }
     ///Generates the prepared transaction with the given extension and payload. If you want to do an basic chaincode call use `build()` instead.
     pub fn generate_transaction(
@@ -323,6 +370,7 @@ pub(crate) fn generate_chaincode_definition(
     contract_id: Option<String>,
     function_name: String,
     function_args: Vec<Vec<u8>>,
+    transient_map: std::collections::HashMap<String, Vec<u8>>,
 ) -> ChaincodeProposalPayload {
     // Build the first arg: "ContractName:FunctionName".
     //
@@ -358,6 +406,71 @@ pub(crate) fn generate_chaincode_definition(
 
     ChaincodeProposalPayload {
         input: chaincode_invokation_spec.encode_to_vec(),
-        transient_map: std::collections::HashMap::default(),
+        transient_map,
+    }
+}
+
+/// A built chaincode proposal bundled with the organizations that should
+/// endorse or serve it. Produced by [ChaincodeCallBuilder::build_prepared].
+///
+/// This wrapper exists because a [SignedProposal] is just signed bytes with no
+/// place to carry the target organization list, which is required for private
+/// data transactions.
+pub struct PreparedTransaction {
+    signed_proposal: SignedProposal,
+    endorsing_organizations: Vec<String>,
+}
+
+impl PreparedTransaction {
+    /// Returns a reference to the underlying signed proposal.
+    pub fn signed_proposal(&self) -> &SignedProposal {
+        &self.signed_proposal
+    }
+
+    /// Returns the configured endorsing/target organizations (MSP IDs).
+    pub fn endorsing_organizations(&self) -> &[String] {
+        &self.endorsing_organizations
+    }
+
+    /// Consumes the prepared transaction and returns the inner signed proposal.
+    pub fn into_signed_proposal(self) -> SignedProposal {
+        self.signed_proposal
+    }
+
+    /// Endorses the transaction, restricting endorsement to the configured
+    /// organizations. See [SignedProposal::endorse_with_organizations].
+    #[cfg(any(feature = "client", feature = "client-wasm"))]
+    pub async fn endorse(
+        self,
+        client: &crate::gateway::client::Client,
+    ) -> Result<crate::fabric::common::Envelope, crate::error::SubmitError> {
+        self.signed_proposal
+            .endorse_with_organizations(client, self.endorsing_organizations)
+            .await
+    }
+
+    /// Evaluates the transaction (read-only query), restricting it to peers of
+    /// the configured organizations. See [crate::gateway::client::Client::evaluate_with_organizations].
+    #[cfg(any(feature = "client", feature = "client-wasm"))]
+    pub async fn evaluate(
+        self,
+        client: &crate::gateway::client::Client,
+    ) -> Result<Vec<u8>, crate::error::SubmitError> {
+        let header = self
+            .signed_proposal
+            .get_proposal()
+            .expect("Invalid proposal bytes")
+            .get_header()
+            .expect("Invalid header")
+            .get_channel_header()
+            .expect("Invalid channel header");
+        client
+            .evaluate_with_organizations(
+                self.signed_proposal,
+                header.tx_id,
+                header.channel_id,
+                self.endorsing_organizations,
+            )
+            .await
     }
 }

@@ -18,6 +18,17 @@ impl SignedProposal {
         self,
         client: &crate::gateway::client::Client,
     ) -> Result<crate::fabric::common::Envelope, SubmitError> {
+        self.endorse_with_organizations(client, vec![]).await
+    }
+
+    /// Like [endorse](Self::endorse) but restricts endorsement to peers of the
+    /// given organizations (MSP IDs). Required for private data transactions,
+    /// where only collection member organizations are able to endorse.
+    pub async fn endorse_with_organizations(
+        self,
+        client: &crate::gateway::client::Client,
+        endorsing_organizations: Vec<String>,
+    ) -> Result<crate::fabric::common::Envelope, SubmitError> {
         if client.tonic_connection.channel.is_none() {
             return Err(SubmitError::NotConnected);
         }
@@ -34,7 +45,7 @@ impl SignedProposal {
             transaction_id: header.tx_id,
             channel_id: header.channel_id,
             proposed_transaction: Some(self),
-            endorsing_organizations: vec![], //Currently empty since private data is not implemented yet
+            endorsing_organizations,
         };
         //First transaction will be endorsed to the network
         let response = gateway_client.endorse(endorse_request).await;
