@@ -116,6 +116,8 @@ impl Client {
             contract_id: None,
             function_name: None,
             function_args: vec![],
+            transient_map: std::collections::HashMap::default(),
+            endorsing_organizations: vec![],
             proposal: None,
             header: None,
             nonce: None,
@@ -201,6 +203,20 @@ impl Client {
         transaction_id: String,
         channel_id: String,
     ) -> Result<Vec<u8>, SubmitError> {
+        self.evaluate_with_organizations(signed_proposal, transaction_id, channel_id, vec![])
+            .await
+    }
+
+    /// Like [evaluate](Self::evaluate) but restricts the query to peers of the
+    /// given organizations (MSP IDs). Required when querying private data, where
+    /// only collection member organizations hold the data.
+    pub async fn evaluate_with_organizations(
+        &self,
+        signed_proposal: SignedProposal,
+        transaction_id: String,
+        channel_id: String,
+        target_organizations: Vec<String>,
+    ) -> Result<Vec<u8>, SubmitError> {
         if self.tonic_connection.channel.is_none() {
             return Err(SubmitError::NotConnected);
         }
@@ -209,7 +225,7 @@ impl Client {
             transaction_id,
             channel_id,
             proposed_transaction: Some(signed_proposal),
-            target_organizations: vec![], // Currently empty since private data is not implemented yet
+            target_organizations,
         };
 
         let mut gateway_client = GatewayClient::new(
