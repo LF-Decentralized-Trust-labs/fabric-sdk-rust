@@ -39,8 +39,11 @@ If you find yourself missing a method or for any features please open an issue.
 | - | - | - | - |
 | DelState | ✅ | 🏻 | 🏻 |
 | GetHistoryForKey | ✅ | ❌ | 🏻 |
+| GetQueryResult | ✅ | ✅ | ✅ |
+| GetQueryResult (paginated) | ✅ | ❌ | ✅ |
 | GetState | ✅  | 🏻 | 🏻 |
 | GetStateByRange | ✅ | 🏻 | 🏻 |
+| GetStateByRange (paginated) | ✅ | ❌ | 🏻 |
 | GetStateMetadata | ✅ | ❌ | 🏻 |
 | GetStateMultiple | ✅ | ❌ | 🏻 |
 | GetPrivateDataHash | ✅ | ❌ | 🏻 |
@@ -58,6 +61,7 @@ Private data is supported on both the client and chaincode sides. The client sup
 | Endorsing/target organizations | ✅ | 🖉 | 🏻 |
 | Get/Put/Del private data (chaincode) | ✅ | 🖉 | 🏻 |
 | GetPrivateDataHash (chaincode) | ✅ | ❌ | 🏻 |
+| Private data rich query (chaincode) | ✅ | ❌ | 🏻 |
 | Purge private data (chaincode) | ✅ | ❌ | 🏻 |
 | Private data metadata / validation parameter | ✅ | ❌ | 🏻 |
 | Collection config (lifecycle) | ✅ | ❌ | 🏻 |
