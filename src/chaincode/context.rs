@@ -13,10 +13,10 @@ use crate::{
             ChaincodeEvent, ChaincodeMessage, ChaincodeProposalPayload, DelState, GetHistoryForKey,
             GetQueryResult, GetState, GetStateByRange, GetStateMetadata, GetStateMultiple,
             GetStateMultipleResult, Proposal, PurgePrivateState, PutState, PutStateMetadata,
-            QueryMetadata, QueryResponse, QueryResponseMetadata, QueryStateNext, SignedProposal,
-            StateMetadata, StateMetadataResult, chaincode_message,
+            QueryMetadata, QueryResponse, QueryResponseMetadata, QueryResultBytes, QueryStateNext,
+            SignedProposal, StateMetadata, StateMetadataResult, chaincode_message,
         },
-        queryresult::Kv,
+        queryresult::{Kv, KeyModification},
     },
 };
 
@@ -170,12 +170,7 @@ impl Context {
             .expect("[Context] Failed to receive response from channel");
         let query_response = QueryResponse::decode(response.payload.as_slice())
             .expect("[Context] Invalid query response");
-        RangeResult::new(
-            self.message_builder.clone(),
-            self.peer_response_queue.clone(),
-            self.message.clone(),
-            query_response,
-        )
+        RangeResult::new(self.drain_query(query_response).await)
     }
 
     /// Executes a rich (CouchDB Mango selector) query against the public state.
@@ -232,12 +227,7 @@ impl Context {
             .expect("[Context] Failed to receive response from channel");
         let query_response = QueryResponse::decode(response.payload.as_slice())
             .expect("[Context] Invalid query response");
-        RangeResult::new(
-            self.message_builder.clone(),
-            self.peer_response_queue.clone(),
-            self.message.clone(),
-            query_response,
-        )
+        RangeResult::new(self.drain_query(query_response).await)
     }
 
     /// Executes a paginated rich query against the public state.
@@ -341,13 +331,46 @@ impl Context {
             .expect("[Context] Invalid query response");
         let response_metadata = QueryResponseMetadata::decode(query_response.metadata.as_slice())
             .expect("[Context] Invalid query response metadata");
-        let range_result = RangeResult::new(
-            self.message_builder.clone(),
-            self.peer_response_queue.clone(),
-            self.message.clone(),
-            query_response,
-        );
+        // Explicitly paginated: return exactly this page. The caller advances
+        // with the bookmark in `response_metadata`; we must NOT drain further.
+        let range_result = RangeResult::new(query_response.results);
         (range_result, response_metadata)
+    }
+
+    /// Pull every remaining page of a query and flatten them into one list of
+    /// result records. The first page is already in hand; further pages are
+    /// requested with `QUERY_STATE_NEXT` until the peer reports `has_more =
+    /// false`. This is done here, in async code, on purpose: each page is a peer
+    /// round-trip, so draining lazily from a synchronous `Iterator::next` would
+    /// force blocking the async runtime (and previously did, via `blocking_lock`
+    /// + a busy-spin, which panics/deadlocks once a query spans more than one
+    /// page). Pages with zero records but `has_more = true` are handled
+    /// correctly — the loop keys off `has_more`, not the page being non-empty.
+    async fn drain_query(&self, mut response: QueryResponse) -> Vec<QueryResultBytes> {
+        let mut all = std::mem::take(&mut response.results);
+        while response.has_more {
+            let payload = QueryStateNext {
+                id: response.id.clone(),
+            }
+            .encode_to_vec();
+            let message_context = self.message.clone();
+            self.message_builder
+                .lock()
+                .await
+                .respond(chaincode_message::Type::QueryStateNext, payload, message_context)
+                .await;
+            let message = self
+                .peer_response_queue
+                .lock()
+                .await
+                .next()
+                .await
+                .expect("[Context] Failed to receive response from channel");
+            response = QueryResponse::decode(message.payload.as_slice())
+                .expect("[Context] Invalid query response");
+            all.append(&mut response.results);
+        }
+        all
     }
 
     //Setter
@@ -443,12 +466,7 @@ impl Context {
             .expect("[Context] Failed to receive response from channel");
         let query_response = QueryResponse::decode(response.payload.as_slice())
             .expect("[Context] Invalid query response");
-        HistoryResult::new(
-            self.message_builder.clone(),
-            self.peer_response_queue.clone(),
-            self.message.clone(),
-            query_response,
-        )
+        HistoryResult::new(self.drain_query(query_response).await)
     }
 
     pub async fn get_state_metadata(&self, key: &str) -> Vec<StateMetadata> {
@@ -684,183 +702,76 @@ impl Context {
         self.get_transient_map().remove(key)
     }
 }
+/// An in-memory iterator over the records of a range or rich query. Every page
+/// is fetched up-front (see [`Context::drain_query`]); this type is a plain
+/// cursor over the materialised values and never touches the peer, so iterating
+/// it can't block the async runtime.
 pub struct RangeResult {
-    message_builder: Arc<Mutex<MessageBuilder>>,
-    peer_response_queue: Arc<Mutex<Receiver<ChaincodeMessage>>>,
-    message: ChaincodeMessage,
-    query_response: QueryResponse,
-    results: Vec<Vec<u8>>,
-    index: usize,
+    inner: std::vec::IntoIter<Vec<u8>>,
 }
 impl RangeResult {
-    pub fn new(
-        message_builder: Arc<Mutex<MessageBuilder>>,
-        peer_response_queue: Arc<Mutex<Receiver<ChaincodeMessage>>>,
-        message: ChaincodeMessage,
-        query_response: QueryResponse,
-    ) -> Self {
-        let results = query_response
-            .results
-            .iter()
-            .map(|f| Kv::decode(f.result_bytes.as_slice()).expect("Invalid KV"))
-            .map(|f| f.value)
-            .collect::<Vec<Vec<u8>>>();
-        RangeResult {
-            message_builder,
-            peer_response_queue,
-            message,
-            query_response,
-            results,
-            index: 0,
-        }
+    /// Decode already-fetched result records into their KV values.
+    pub fn new(results: Vec<QueryResultBytes>) -> Self {
+        let inner = results
+            .into_iter()
+            .map(|f| {
+                Kv::decode(f.result_bytes.as_slice())
+                    .expect("[Context] Invalid KV")
+                    .value
+            })
+            .collect::<Vec<Vec<u8>>>()
+            .into_iter();
+        RangeResult { inner }
     }
 }
 impl Iterator for RangeResult {
     type Item = Vec<u8>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index < self.results.len() {
-            //We still have some results in our buffer
-            self.index += 1;
-            self.results.get(self.index - 1).cloned()
-        } else {
-            //our buffer has been iterated through -> check if the node has more
-            if self.query_response.has_more {
-                //Request more from node
-                let payload = QueryStateNext {
-                    id: self.query_response.id.clone(),
-                }
-                .encode_to_vec();
-                let message_context = self.message.clone();
-                let message_builder = self.message_builder.clone();
-                tokio::spawn(async move {
-                    message_builder
-                        .lock()
-                        .await
-                        .respond(
-                            chaincode_message::Type::QueryStateNext,
-                            payload,
-                            message_context,
-                        )
-                        .await;
-                });
-                loop {
-                    match self.peer_response_queue.blocking_lock().try_next() {
-                        Ok(Some(response)) => {
-                            let query_response = QueryResponse::decode(response.payload.as_slice())
-                                .expect("[Context] Invalid query response");
-                            self.query_response = query_response;
-                            self.index = 1;
-                            self.results = self
-                                .query_response
-                                .results
-                                .iter()
-                                .map(|f| Kv::decode(f.result_bytes.as_slice()).expect("Invalid KV"))
-                                .map(|f| f.value)
-                                .collect::<Vec<Vec<u8>>>();
-                            return self.results.first().cloned();
-                        }
-                        Ok(None) => {
-                            panic!("[Context] Query Channel is closed")
-                        }
-                        Err(_) => {}
-                    }
-                }
-            } else {
-                None
-            }
-        }
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
     }
 }
 
+/// An in-memory iterator over the modifications of a key's history. Every page
+/// is fetched up-front (see [`Context::drain_query`]); this type is a plain
+/// cursor over the materialised records and never touches the peer.
 pub struct HistoryResult {
-    message_builder: Arc<Mutex<MessageBuilder>>,
-    peer_response_queue: Arc<Mutex<Receiver<ChaincodeMessage>>>,
-    message: ChaincodeMessage,
-    query_response: QueryResponse,
-    results: Vec<Vec<u8>>,
-    index: usize,
+    inner: std::vec::IntoIter<KeyModification>,
 }
 
 impl HistoryResult {
-    pub fn new(
-        message_builder: Arc<Mutex<MessageBuilder>>,
-        peer_response_queue: Arc<Mutex<Receiver<ChaincodeMessage>>>,
-        message: ChaincodeMessage,
-        query_response: QueryResponse,
-    ) -> Self {
-        let results = query_response
-            .results
-            .iter()
-            .map(|f| Kv::decode(f.result_bytes.as_slice()).expect("Invalid KV"))
-            .map(|f| f.value)
-            .collect::<Vec<Vec<u8>>>();
-        HistoryResult {
-            message_builder,
-            peer_response_queue,
-            message,
-            query_response,
-            results,
-            index: 0,
-        }
+    /// Decode already-fetched history records.
+    ///
+    /// History queries return `KeyModification` (tx_id, value, timestamp,
+    /// is_delete) — NOT `Kv` (which is for range/rich queries). Decoding as `Kv`
+    /// mis-reads the fields (value is at tag 2, not 3), so callers got garbage;
+    /// decode the right type and surface the whole record.
+    pub fn new(results: Vec<QueryResultBytes>) -> Self {
+        let inner = results
+            .into_iter()
+            .map(|f| {
+                KeyModification::decode(f.result_bytes.as_slice())
+                    .expect("[Context] Invalid KeyModification")
+            })
+            .collect::<Vec<KeyModification>>()
+            .into_iter();
+        HistoryResult { inner }
     }
 }
 
 impl Iterator for HistoryResult {
-    type Item = Vec<u8>;
+    type Item = KeyModification;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index < self.results.len() {
-            //We still have some results in our buffer
-            self.index += 1;
-            self.results.get(self.index - 1).cloned()
-        } else {
-            //our buffer has been iterated through -> check if the node has more
-            if self.query_response.has_more {
-                //Request more from node
-                let payload = QueryStateNext {
-                    id: self.query_response.id.clone(),
-                }
-                .encode_to_vec();
-                let message_context = self.message.clone();
-                let message_builder = self.message_builder.clone();
-                tokio::spawn(async move {
-                    message_builder
-                        .lock()
-                        .await
-                        .respond(
-                            chaincode_message::Type::QueryStateNext,
-                            payload,
-                            message_context,
-                        )
-                        .await;
-                });
-                loop {
-                    match self.peer_response_queue.blocking_lock().try_next() {
-                        Ok(Some(response)) => {
-                            let query_response = QueryResponse::decode(response.payload.as_slice())
-                                .expect("[Context] Invalid query response");
-                            self.query_response = query_response;
-                            self.index = 1;
-                            self.results = self
-                                .query_response
-                                .results
-                                .iter()
-                                .map(|f| Kv::decode(f.result_bytes.as_slice()).expect("Invalid KV"))
-                                .map(|f| f.value)
-                                .collect::<Vec<Vec<u8>>>();
-                            return self.results.first().cloned();
-                        }
-                        Ok(None) => {
-                            panic!("[Context] Query Channel is closed")
-                        }
-                        Err(_) => {}
-                    }
-                }
-            } else {
-                None
-            }
-        }
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
     }
 }
 
@@ -955,6 +866,77 @@ oVrYCtFE61mTSrjr8Bs3WyglOTxz3K5jlyukIsCmPqmvpAt9EwmBpCOE\n\
         // RangeResult must iterate the returned KV values in order.
         let values: Vec<Vec<u8>> = range_result.collect();
         assert_eq!(values, vec![b"value1".to_vec(), b"value2".to_vec()]);
+    }
+
+    /// A query whose results span several peer pages must be drained fully and
+    /// in order — including a page that is empty but still flags `has_more`.
+    /// This exercises the path that previously busy-spun on `blocking_lock`
+    /// (panicking/deadlocking once a query exceeded one page).
+    #[tokio::test]
+    async fn query_result_drains_all_pages_in_order() {
+        let (outbound_tx, mut outbound_rx) = mpsc::channel::<ChaincodeMessage>(10);
+        let (mut peer_tx, peer_rx) = mpsc::channel::<ChaincodeMessage>(10);
+
+        let pages = [
+            // Page 1: two records, more to come.
+            QueryResponse {
+                results: vec![kv_result("a", b"1"), kv_result("b", b"2")],
+                has_more: true,
+                id: "cursor".to_string(),
+                metadata: vec![],
+            },
+            // Page 2: empty but still flags more — must not end iteration.
+            QueryResponse {
+                results: vec![],
+                has_more: true,
+                id: "cursor".to_string(),
+                metadata: vec![],
+            },
+            // Page 3: final record.
+            QueryResponse {
+                results: vec![kv_result("c", b"3")],
+                has_more: false,
+                id: "cursor".to_string(),
+                metadata: vec![],
+            },
+        ];
+        for page in &pages {
+            peer_tx
+                .try_send(ChaincodeMessage {
+                    payload: page.encode_to_vec(),
+                    ..Default::default()
+                })
+                .expect("failed to queue mock peer reply");
+        }
+
+        let message_builder = MessageBuilder::new(&test_metadata(), outbound_tx);
+        let context = Context::new(
+            Arc::new(Mutex::new(message_builder)),
+            ChaincodeMessage::default(),
+            Arc::new(Mutex::new(peer_rx)),
+        );
+
+        let values: Vec<Vec<u8>> = context.get_query_result("{}").await.collect();
+        assert_eq!(
+            values,
+            vec![b"1".to_vec(), b"2".to_vec(), b"3".to_vec()],
+            "all pages must be drained, in order, skipping the empty page"
+        );
+
+        // Outbound: the initial GET_QUERY_RESULT plus one QUERY_STATE_NEXT for
+        // each additional page pulled (pages 2 and 3).
+        let mut sent = Vec::new();
+        while let Ok(Some(m)) = outbound_rx.try_next() {
+            sent.push(m.r#type);
+        }
+        assert_eq!(
+            sent,
+            vec![
+                chaincode_message::Type::GetQueryResult as i32,
+                chaincode_message::Type::QueryStateNext as i32,
+                chaincode_message::Type::QueryStateNext as i32,
+            ]
+        );
     }
 }
 

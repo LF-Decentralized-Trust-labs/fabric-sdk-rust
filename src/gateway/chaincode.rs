@@ -19,6 +19,10 @@ pub struct ChaincodeCallBuilder {
     pub(crate) chaincode_id: Option<String>,
     pub(crate) contract_id: Option<String>,
     pub(crate) function_name: Option<String>,
+    /// When set, the first chaincode arg is the bare function name with no
+    /// `name:`/`contract:` routing prefix — required to invoke system
+    /// chaincodes whose name does not start with `_` (e.g. `qscc`, `cscc`).
+    pub(crate) system_chaincode: bool,
     pub(crate) function_args: Vec<Vec<u8>>,
     pub(crate) transient_map: std::collections::HashMap<String, Vec<u8>>,
     pub(crate) endorsing_organizations: Vec<String>,
@@ -76,6 +80,15 @@ impl ChaincodeCallBuilder {
         }
         self.function_name = Some(name);
         Ok(self)
+    }
+
+    /// Invoke a system chaincode (e.g. `qscc`, `cscc`) that expects the bare
+    /// function name as the first arg. Without this, the builder prefixes the
+    /// function with the chaincode name (`qscc:GetBlockByTxID`), which system
+    /// chaincodes reject. Has no effect on contract-routed user chaincodes.
+    pub fn with_system_chaincode(&mut self) -> &mut Self {
+        self.system_chaincode = true;
+        self
     }
 
     pub fn with_function_args<T, U>(
@@ -171,6 +184,7 @@ impl ChaincodeCallBuilder {
                 .clone(),
             self.function_args.clone(),
             self.transient_map.clone(),
+            self.system_chaincode,
         );
 
         let chaincode_header_extension = ChaincodeHeaderExtension {
@@ -371,16 +385,19 @@ pub(crate) fn generate_chaincode_definition(
     function_name: String,
     function_args: Vec<Vec<u8>>,
     transient_map: std::collections::HashMap<String, Vec<u8>>,
+    system_chaincode: bool,
 ) -> ChaincodeProposalPayload {
     // Build the first arg: "ContractName:FunctionName".
     //
-    // System chaincodes (name starts with '_', e.g. _lifecycle) expect the
-    // bare function name and don't use contract routing.
+    // System chaincodes expect the bare function name and don't use contract
+    // routing — either because the name starts with '_' (e.g. _lifecycle) or
+    // because the caller opted in via `with_system_chaincode()` for the ones
+    // that don't (e.g. qscc, cscc).
     // User-defined chaincodes use the contract model where the chaincode name
     // doubles as the default contract name; an explicit contract_id overrides.
     let routing = match contract_id {
         Some(id) => format!("{}:{}", id, function_name),
-        None if chaincode_id.name.starts_with('_') => function_name.clone(),
+        None if system_chaincode || chaincode_id.name.starts_with('_') => function_name.clone(),
         None => format!("{}:{}", chaincode_id.name, function_name),
     };
     let mut args = vec![routing.into_bytes()];

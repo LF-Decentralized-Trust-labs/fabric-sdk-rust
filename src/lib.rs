@@ -15,6 +15,8 @@ pub mod fabric {
     pub mod protos;
     #[cfg(feature = "chaincode")]
     pub mod queryresult;
+    pub mod rwset;
+    pub mod kvrwset;
 }
 //    #[cfg(not(feature = "client-wasm"))]
 
