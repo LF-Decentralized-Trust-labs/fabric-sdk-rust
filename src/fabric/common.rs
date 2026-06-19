@@ -758,3 +758,26 @@ impl BlockMetadataIndex {
         }
     }
 }
+/// Contains information about the blockchain ledger such as height, current
+/// block hash, and previous block hash.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct BlockchainInfo {
+    #[prost(uint64, tag = "1")]
+    pub height: u64,
+    #[prost(bytes = "vec", tag = "2")]
+    pub current_block_hash: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "3")]
+    pub previous_block_hash: ::prost::alloc::vec::Vec<u8>,
+    /// Specifies bootstrapping snapshot info if the channel is bootstrapped from a snapshot.
+    /// It is nil if the channel is not bootstrapped from a snapshot.
+    #[prost(message, optional, tag = "4")]
+    pub bootstrapping_snapshot_info: ::core::option::Option<BootstrappingSnapshotInfo>,
+}
+/// Contains information for the bootstrapping snapshot.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct BootstrappingSnapshotInfo {
+    #[prost(uint64, tag = "1")]
+    pub last_block_in_snapshot: u64,
+}

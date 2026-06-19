@@ -23,6 +23,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "fabric-protos/peer/snapshot.proto",
                 "fabric-protos/msp/identities.proto",
                 "fabric-protos/ledger/queryresult/kv_query_result.proto",
+                "fabric-protos/ledger/rwset/rwset.proto",
+                "fabric-protos/ledger/rwset/kvrwset/kv_rwset.proto",
+                "fabric-protos/common/ledger.proto",
                 "fabric-protos/discovery/protocol.proto",
                 "fabric-protos/gossip/message.proto", // Needed for protocol.proto
                 "fabric-protos/peer/lifecycle/lifecycle.proto",

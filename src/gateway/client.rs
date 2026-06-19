@@ -115,6 +115,7 @@ impl Client {
             chaincode_id: None,
             contract_id: None,
             function_name: None,
+            system_chaincode: false,
             function_args: vec![],
             transient_map: std::collections::HashMap::default(),
             endorsing_organizations: vec![],
