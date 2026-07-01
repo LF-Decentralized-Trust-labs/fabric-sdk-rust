@@ -631,6 +631,20 @@ impl Context {
             .expect("[Context] Failed to receive response from channel");
     }
 
+    /// Attaches a chaincode event to the current transaction. Fabric allows at
+    /// most one event per transaction; calling this more than once overwrites
+    /// the previously stashed event, and it is emitted on the transaction's
+    /// `COMPLETED` response.
+    pub async fn set_event(&self, name: &str, payload: Vec<u8>) {
+        let event = ChaincodeEvent {
+            tx_id: self.message.txid.clone(),
+            event_name: name.to_string(),
+            payload,
+            ..Default::default()
+        };
+        self.message_builder.lock().await.with_event(Some(event));
+    }
+
     /// Decodes the [Proposal] carried by the chaincode message, if present.
     fn decode_proposal(&self) -> Option<Proposal> {
         self.message.proposal.as_ref().map(|proposal| {
@@ -937,6 +951,73 @@ oVrYCtFE61mTSrjr8Bs3WyglOTxz3K5jlyukIsCmPqmvpAt9EwmBpCOE\n\
                 chaincode_message::Type::QueryStateNext as i32,
             ]
         );
+    }
+
+    /// `set_event` must only surface on the transaction's `COMPLETED`
+    /// response (never on intermediate GetState/etc. round trips), and must
+    /// not leak into a later response once emitted.
+    #[tokio::test]
+    async fn set_event_attaches_only_to_completed_response_and_is_cleared() {
+        let (outbound_tx, mut outbound_rx) = mpsc::channel::<ChaincodeMessage>(10);
+        let (_peer_tx, peer_rx) = mpsc::channel::<ChaincodeMessage>(10);
+
+        let message_builder = Arc::new(Mutex::new(MessageBuilder::new(
+            &test_metadata(),
+            outbound_tx,
+        )));
+        let message = ChaincodeMessage {
+            txid: "tx-1".to_string(),
+            ..Default::default()
+        };
+        let context = Context::new(
+            message_builder.clone(),
+            message.clone(),
+            Arc::new(Mutex::new(peer_rx)),
+        );
+
+        context.set_event("process", b"payload".to_vec()).await;
+
+        // An intermediate (non-Completed) response must not carry the event.
+        message_builder
+            .lock()
+            .await
+            .respond(chaincode_message::Type::GetState, vec![], message.clone())
+            .await;
+        let intermediate = outbound_rx
+            .try_next()
+            .expect("no message was sent")
+            .expect("outbound channel closed");
+        assert!(intermediate.chaincode_event.is_none());
+
+        // The Completed response must carry the stashed event.
+        message_builder
+            .lock()
+            .await
+            .respond(chaincode_message::Type::Completed, vec![], message.clone())
+            .await;
+        let completed = outbound_rx
+            .try_next()
+            .expect("no message was sent")
+            .expect("outbound channel closed");
+        let event = completed
+            .chaincode_event
+            .expect("event should be attached to the Completed response");
+        assert_eq!(event.event_name, "process");
+        assert_eq!(event.payload, b"payload");
+        assert_eq!(event.tx_id, "tx-1");
+
+        // A later Completed response, without a new `set_event` call, must
+        // not resend the previous event.
+        message_builder
+            .lock()
+            .await
+            .respond(chaincode_message::Type::Completed, vec![], message)
+            .await;
+        let second_completed = outbound_rx
+            .try_next()
+            .expect("no message was sent")
+            .expect("outbound channel closed");
+        assert!(second_completed.chaincode_event.is_none());
     }
 }
 

@@ -50,6 +50,8 @@ If you find yourself missing a method or for any features please open an issue.
 | PurgePrivateData | ✅ | ❌ | 🏻 |
 | PutState | ✅  | 🏻 | 🏻 |
 | PutStateMetadata | ✅ | ❌ | 🏻 |
+| GetEvent (read incoming chaincode event) | ✅ | ❌ | 🏻 |
+| SetEvent (emit chaincode event, `Context::set_event`) | ✅ | ✅ | ✅ |
 
 ### Private Data Collections
 
