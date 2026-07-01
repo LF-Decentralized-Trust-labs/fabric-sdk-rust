@@ -2,7 +2,7 @@ use futures_channel::mpsc::Sender;
 
 use crate::{
     chaincode::Metadata,
-    fabric::protos::{ChaincodeMessage, chaincode_message},
+    fabric::protos::{ChaincodeEvent, ChaincodeMessage, chaincode_message},
     gateway::chaincode::ChaincodeCallBuilder,
     identity::IdentityBuilder,
 };
@@ -10,6 +10,7 @@ use crate::{
 pub struct MessageBuilder {
     tx: Sender<ChaincodeMessage>,
     chaincode_call_builder: crate::gateway::chaincode::ChaincodeCallBuilder,
+    pending_event: Option<ChaincodeEvent>,
 }
 impl MessageBuilder {
     pub fn new(metadata: &Metadata, tx: Sender<ChaincodeMessage>) -> MessageBuilder {
@@ -38,7 +39,23 @@ impl MessageBuilder {
                 nonce: None,
                 transaction_id: None,
             },
+            pending_event: None,
         }
+    }
+
+    /// Statically sets the pending chaincode event, to be attached to the
+    /// next `Completed` response. See
+    /// [`Context::set_event`](crate::chaincode::context::Context::set_event).
+    ///
+    /// Unlike [`with_proposal`](crate::gateway::chaincode::ChaincodeCallBuilder::with_proposal)
+    /// and friends, this is deliberately NOT reset after every [`respond`](Self::respond)
+    /// call: a transaction may issue any number of intermediate GetState/PutState/etc.
+    /// round trips between `set_event` and its final `Completed` response, and the
+    /// event must survive all of them. `respond` only clears it once actually
+    /// consumed, on the `Completed` branch.
+    pub(crate) fn with_event(&mut self, event: Option<ChaincodeEvent>) -> &mut Self {
+        self.pending_event = event;
+        self
     }
 
     pub async fn send(&mut self, r#type: chaincode_message::Type, payload: Vec<u8>) {
@@ -54,13 +71,21 @@ impl MessageBuilder {
         payload: Vec<u8>,
         message: ChaincodeMessage,
     ) {
+        let chaincode_event = match r#type {
+            chaincode_message::Type::Completed => {
+                let event = self.pending_event.clone().or(message.chaincode_event.clone());
+                self.with_event(None);
+                event
+            }
+            _ => message.chaincode_event.clone(),
+        };
         let message = ChaincodeMessage {
             r#type: r#type.into(),
             timestamp: message.timestamp,
             payload,
             txid: message.txid,
             proposal: message.proposal,
-            chaincode_event: message.chaincode_event,
+            chaincode_event,
             channel_id: message.channel_id,
         };
         self.tx.start_send(message).unwrap();
