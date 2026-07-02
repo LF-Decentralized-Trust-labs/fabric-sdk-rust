@@ -161,7 +161,7 @@ struct ModifyIdentityBody<'a> {
 
 #[derive(Serialize)]
 struct RevokeBody<'a> {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "id", skip_serializing_if = "Option::is_none")]
     enrollment_id: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     serial: Option<&'a str>,
@@ -169,6 +169,7 @@ struct RevokeBody<'a> {
     aki: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     reason: Option<&'a str>,
+    #[serde(rename = "gencrl")]
     gen_crl: bool,
 }
 
@@ -538,5 +539,53 @@ impl FabricCAClient {
                 .join(", ");
             Err(FabricCAError::CAError(msg))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn revoke_body_uses_fabric_ca_json_tags() {
+        let body = RevokeBody {
+            enrollment_id: Some("admin"),
+            serial: None,
+            aki: None,
+            reason: Some("unspecified"),
+            gen_crl: true,
+        };
+        let json: serde_json::Value = serde_json::to_value(&body).unwrap();
+        let obj = json.as_object().unwrap();
+
+        assert_eq!(obj.get("id").and_then(|v| v.as_str()), Some("admin"));
+        assert_eq!(obj.get("gencrl").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(obj.get("reason").and_then(|v| v.as_str()), Some("unspecified"));
+        assert!(!obj.contains_key("enrollment_id"));
+        assert!(!obj.contains_key("gen_crl"));
+        assert!(!obj.contains_key("serial"));
+        assert!(!obj.contains_key("aki"));
+    }
+
+    #[test]
+    fn register_identity_body_uses_fabric_ca_json_tags() {
+        let attrs: Vec<CAAttribute> = vec![];
+        let body = RegisterIdentityBody {
+            id: "bob",
+            r#type: "client",
+            secret: Some("secret123"),
+            max_enrollments: Some(1),
+            affiliation: Some("org1"),
+            attrs: &attrs,
+        };
+        let json: serde_json::Value = serde_json::to_value(&body).unwrap();
+        let obj = json.as_object().unwrap();
+
+        assert_eq!(obj.get("id").and_then(|v| v.as_str()), Some("bob"));
+        assert_eq!(obj.get("type").and_then(|v| v.as_str()), Some("client"));
+        assert_eq!(obj.get("secret").and_then(|v| v.as_str()), Some("secret123"));
+        assert_eq!(obj.get("max_enrollments").and_then(|v| v.as_i64()), Some(1));
+        assert_eq!(obj.get("affiliation").and_then(|v| v.as_str()), Some("org1"));
+        assert!(obj.contains_key("attrs"));
     }
 }
