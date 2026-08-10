@@ -11,6 +11,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_transport(true)
         .message_attribute(".", "#[derive(serde::Serialize,serde::Deserialize)]")
         .enum_attribute(".", "#[derive(serde::Serialize,serde::Deserialize)]")
+        // Use BTreeMap for the channel-config map fields so encoding a Config /
+        // ConfigUpdate is deterministic (sorted keys). Signing and comparing
+        // config updates relies on stable bytes for identical inputs.
+        .btree_map(".common.ConfigGroup")
+        .btree_map(".common.ConfigUpdate")
+        .btree_map(".common.ConfigUpdateEnvelope")
         .out_dir("src/fabric")
         .compile_well_known_types(true)
         .extern_path(".google.protobuf", "crate::fabric::google_protobuf")
@@ -30,6 +36,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "fabric-protos/gossip/message.proto", // Needed for protocol.proto
                 "fabric-protos/peer/lifecycle/lifecycle.proto",
                 "fabric-protos/peer/peer.proto",
+                // Channel configuration (configtx) protos
+                "fabric-protos/common/configtx.proto",
+                "fabric-protos/common/configuration.proto",
+                "fabric-protos/common/policies.proto",
+                "fabric-protos/msp/msp_principal.proto", // Needed for policies.proto
+                "fabric-protos/msp/msp_config.proto",
+                "fabric-protos/orderer/configuration.proto",
+                "fabric-protos/orderer/etcdraft/configuration.proto",
+                "fabric-protos/orderer/etcdraft/metadata.proto",
+                "fabric-protos/orderer/smartbft/configuration.proto",
+                "fabric-protos/peer/configuration.proto",
+                "fabric-protos/peer/query.proto",
             ],
             &["fabric-protos"],
         )?;

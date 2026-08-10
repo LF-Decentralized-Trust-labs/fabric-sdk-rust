@@ -2549,3 +2549,107 @@ pub mod endorser_server {
         const NAME: &'static str = SERVICE_NAME;
     }
 }
+/// AnchorPeers simply represents list of anchor peers which is used in ConfigurationItem
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AnchorPeers {
+    #[prost(message, repeated, tag = "1")]
+    pub anchor_peers: ::prost::alloc::vec::Vec<AnchorPeer>,
+}
+/// AnchorPeer message structure which provides information about anchor peer, it includes host name,
+/// port number and peer certificate.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AnchorPeer {
+    /// DNS host name of the anchor peer
+    #[prost(string, tag = "1")]
+    pub host: ::prost::alloc::string::String,
+    /// The port number
+    #[prost(int32, tag = "2")]
+    pub port: i32,
+}
+/// APIResource represents an API resource in the peer whose ACL
+/// is determined by the policy_ref field
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ApiResource {
+    /// The policy name to use for this API
+    #[prost(string, tag = "1")]
+    pub policy_ref: ::prost::alloc::string::String,
+}
+/// ACLs provides mappings for resources in a channel. APIResource encapsulates
+/// reference to a policy used to determine ACL for the resource
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AcLs {
+    #[prost(map = "string, message", tag = "1")]
+    pub acls: ::std::collections::HashMap<::prost::alloc::string::String, ApiResource>,
+}
+/// ChaincodeQueryResponse returns information about each chaincode that pertains
+/// to a query in lscc.go, such as GetChaincodes (returns all chaincodes
+/// instantiated on a channel), and GetInstalledChaincodes (returns all chaincodes
+/// installed on a peer)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ChaincodeQueryResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub chaincodes: ::prost::alloc::vec::Vec<ChaincodeInfo>,
+}
+/// ChaincodeInfo contains general information about an installed/instantiated
+/// chaincode
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ChaincodeInfo {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub version: ::prost::alloc::string::String,
+    /// the path as specified by the install/instantiate transaction
+    #[prost(string, tag = "3")]
+    pub path: ::prost::alloc::string::String,
+    /// the chaincode function upon instantiation and its arguments. This will be
+    /// blank if the query is returning information about installed chaincodes.
+    #[prost(string, tag = "4")]
+    pub input: ::prost::alloc::string::String,
+    /// the name of the ESCC for this chaincode. This will be
+    /// blank if the query is returning information about installed chaincodes.
+    #[prost(string, tag = "5")]
+    pub escc: ::prost::alloc::string::String,
+    /// the name of the VSCC for this chaincode. This will be
+    /// blank if the query is returning information about installed chaincodes.
+    #[prost(string, tag = "6")]
+    pub vscc: ::prost::alloc::string::String,
+    /// the chaincode unique id.
+    /// computed as: H(
+    ///                 H(name || version) ||
+    ///                 H(CodePackage)
+    ///               )
+    #[prost(bytes = "vec", tag = "7")]
+    pub id: ::prost::alloc::vec::Vec<u8>,
+}
+/// ChannelQueryResponse returns information about each channel that pertains
+/// to a query in lscc.go, such as GetChannels (returns all channels for a
+/// given peer)
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ChannelQueryResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub channels: ::prost::alloc::vec::Vec<ChannelInfo>,
+}
+/// ChannelInfo contains general information about channels
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ChannelInfo {
+    #[prost(string, tag = "1")]
+    pub channel_id: ::prost::alloc::string::String,
+}
+/// JoinBySnapshotStatus contains information about whether or a JoinBySnapshot operation
+/// is in progress and the related bootstrap dir if it is running.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct JoinBySnapshotStatus {
+    #[prost(bool, tag = "1")]
+    pub in_progress: bool,
+    #[prost(string, tag = "2")]
+    pub bootstrapping_snapshot_dir: ::prost::alloc::string::String,
+}

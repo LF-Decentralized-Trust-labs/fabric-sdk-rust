@@ -110,25 +110,27 @@ Private data is supported on both the client and chaincode sides. The client sup
 
 | Method     | Implemented      | Unit Tests | Documentation |
 | - | - | - | - |
-| Discover | ❌ | ❌ | ❌ |
+| Discover | ✅ | ❌ | 🏻 |
 
 ## [AtomicBroadcast](https://hyperledger.github.io/fabric-protos/protos.html#orderer-AtomicBroadcast)
 
-| Method     | Implemented      | Unit Tests | Documentation |
+Implemented by `gateway::orderer::OrdererClient` (native only, feature `client`).
+
+| Method     | Implemented      | Integration Tests | Documentation |
 | - | - | - | - |
-| Broadcast | ❌ | ❌ | ❌ |
-| Deliver | ❌ | ❌ | ❌ |
+| Broadcast | ✅ | ✅ | ✅ |
+| Deliver | ✅ | ✅ | ✅ |
 
 ### AtomicBroadcast Stream Methods
 
-| Method     | Implemented      | Unit Tests | Documentation |
+| Method     | Implemented      | Integration Tests | Documentation |
 | - | - | - | - |
-| SeekInfo | ❌ | ❌ | ❌ |
-| SeekNewest | ❌ | ❌ | ❌ |
+| SeekInfo | ✅ | ✅ | ✅ |
+| SeekNewest | ✅ | ✅ | ✅ |
 | SeekNextCommit | ❌ | ❌ | ❌ |
-| SeekOldest | ❌ | ❌ | ❌ |
-| SeekPosition | ❌ | ❌ | ❌ |
-| SeekSpecified | ❌ | ❌ | ❌ |
+| SeekOldest | ✅ | ✅ | ✅ |
+| SeekPosition | ✅ | ✅ | ✅ |
+| SeekSpecified | ✅ | ✅ | ✅ |
 
 ## [Cluster](https://hyperledger.github.io/fabric-protos/protos.html#orderer-Cluster)
 
@@ -175,7 +177,72 @@ Private data is supported on both the client and chaincode sides. The client sup
 
 | Method     | Implemented      | Unit Tests | Documentation |
 | - | - | - | - |
-| ProcessProposal | ❌ | ❌ | ❌ |
+| ProcessProposal | ✅ | ❌ | ✅ |
+
+## System chaincodes (cscc / qscc)
+
+Typed wrappers over channel-less `Endorser.ProcessProposal` calls, available
+on both native and WASM builds via `Client::get_cscc_client()` /
+`Client::get_qscc_client()`.
+
+### CSCC (`gateway::cscc::CsccClient`)
+
+| Method     | Implemented      | Integration Tests | Documentation |
+| - | - | - | - |
+| JoinChain | ✅ | ✅ | ✅ |
+| JoinChainBySnapshot | ✅ | ❌ | ✅ |
+| GetChannels | ✅ | ✅ | ✅ |
+| GetConfigBlock | ✅ | ✅ | ✅ |
+| GetChannelConfig | ✅ | ✅ | ✅ |
+
+### QSCC (`gateway::qscc::QsccClient`)
+
+| Method     | Implemented      | Integration Tests | Documentation |
+| - | - | - | - |
+| GetChainInfo | ✅ | ✅ | ✅ |
+| GetBlockByNumber | ✅ | ✅ | ✅ |
+| GetBlockByTxID | ✅ | ❌ | ✅ |
+| GetTransactionByID | ✅ | ❌ | ✅ |
+| GetBlockByHash | ❌ | ❌ | ❌ |
+
+## Channel configuration updates (`gateway::configtx`)
+
+Pure/WASM-safe helpers for computing, editing and signing channel config
+updates (the `configtxlator` / `peer channel update` workflow, in-process).
+
+| Feature | Implemented | Unit Tests | Conformance | Documentation |
+| - | - | - | - | - |
+| ConfigUpdate delta computation (port of `configtxlator compute_update`) | ✅ | ✅ | ✅ (cross-validated against configtxlator, `tests/conformance.rs`) | ✅ |
+| ConfigSignature creation / multi-org collection | ✅ | ✅ | — | ✅ |
+| CONFIG_UPDATE envelope assembly | ✅ | ✅ | — | ✅ |
+| Edit helper: set_anchor_peers | ✅ | ✅ | ✅ | ✅ |
+| Edit helper: add_application_org | ✅ | ✅ | ✅ | ✅ |
+| Edit helpers: add_consenter / remove_consenter (etcdraft) | ✅ | ✅ | ✅ | ✅ |
+| Further recipes (capabilities, ACLs, batch size, …) | ❌ (TODO) | — | — | 🏻 |
+
+## Channel participation — osnadmin (`osnadmin::OsnadminClient`)
+
+REST client with mutual TLS for the orderer admin endpoint (native only,
+feature `client`).
+
+| Method | Implemented | Integration Tests | Documentation |
+| - | - | - | - |
+| ListChannels | ✅ | ✅ | ✅ |
+| ChannelInfo | ✅ | ✅ | ✅ |
+| Join | ✅ | ✅ | ✅ |
+| Remove | ✅ | ❌ | ✅ |
+
+## Operations service (`operations::OperationsClient`)
+
+REST client for the peer/orderer operations endpoint (native only, feature
+`client`).
+
+| Method | Implemented | Integration Tests | Documentation |
+| - | - | - | - |
+| healthz | ✅ | ✅ | ✅ |
+| version | ✅ | ✅ | ✅ |
+| logspec (GET/PUT) | ✅ | ✅ | ✅ |
+| metrics | ✅ | 🏻 | ✅ |
 
 ## [Fabric CA](https://hyperledger-fabric-ca.readthedocs.io/en/latest/)
 
@@ -193,8 +260,8 @@ It manages user and service identities (X.509 certificates) for each organizatio
 | ListAffiliations | ✅ | ✅ | ✅ |
 | GetAffiliation   | ✅ | ✅ | ✅ |
 | Revoke           | ✅ | ✅ | ✅ |
-| Enroll           | ❌ | ❌ | ❌ |
-| Reenroll         | ❌ | ❌ | ❌ |
+| Enroll           | ✅ | ✅ | ✅ |
+| Reenroll         | ✅ | ✅ | ✅ |
 
 Required environment variables for Fabric CA integration tests:
 - `FABRIC_CA_URL` — base URL of the CA server, e.g. `https://localhost:7054` (tests are skipped if not set)

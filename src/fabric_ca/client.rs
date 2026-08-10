@@ -57,6 +57,53 @@ pub struct RevokeRequest {
     pub gen_crl: bool,
 }
 
+/// Request for enrolling an identity with the Fabric CA
+/// ([`FabricCAClient::enroll`]).
+///
+/// A fresh P-256 key pair and a PKCS#10 certificate signing request are
+/// generated locally; the private key never leaves the client.
+pub struct EnrollmentRequest {
+    /// Enrollment ID (the identity's name, used as the CSR's CN and for
+    /// basic authentication).
+    pub enrollment_id: String,
+    /// Enrollment secret (as returned by
+    /// [`register_identity`](FabricCAClient::register_identity)).
+    pub secret: String,
+    /// Signing profile, e.g. `"tls"` for a TLS certificate. `None` uses the
+    /// CA's default (an enrollment certificate).
+    pub profile: Option<String>,
+    /// DNS names to include as Subject Alternative Names in the CSR
+    /// (mainly for TLS certificates).
+    pub csr_hosts: Vec<String>,
+    /// Name of the CA within the server, when the server hosts multiple CAs.
+    pub ca_name: Option<String>,
+}
+
+/// Request for re-enrolling the client's current identity
+/// ([`FabricCAClient::reenroll`]), rotating its key and certificate.
+pub struct ReenrollmentRequest {
+    /// The enrollment ID of the current identity (used as the CSR's CN).
+    pub enrollment_id: String,
+    /// Signing profile, e.g. `"tls"`. `None` uses the CA's default.
+    pub profile: Option<String>,
+    /// DNS names to include as Subject Alternative Names in the CSR.
+    pub csr_hosts: Vec<String>,
+    /// Name of the CA within the server, when the server hosts multiple CAs.
+    pub ca_name: Option<String>,
+}
+
+/// Result of a successful [`enroll`](FabricCAClient::enroll) or
+/// [`reenroll`](FabricCAClient::reenroll).
+pub struct EnrollmentResult {
+    /// The issued certificate (PEM).
+    pub certificate_pem: String,
+    /// The locally generated private key (PKCS#8 PEM). Store it safely —
+    /// the CA never sees it.
+    pub private_key_pem: String,
+    /// The CA's certificate chain (PEM).
+    pub ca_chain_pem: String,
+}
+
 // ===== Response types =====
 
 /// An identity registered with the Fabric CA.
@@ -173,6 +220,29 @@ struct RevokeBody<'a> {
     gen_crl: bool,
 }
 
+#[derive(Serialize)]
+struct EnrollBody<'a> {
+    certificate_request: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    profile: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    caname: Option<&'a str>,
+}
+
+#[derive(Deserialize)]
+struct EnrollResult {
+    #[serde(rename = "Cert")]
+    cert: String,
+    #[serde(rename = "ServerInfo", default)]
+    server_info: Option<EnrollServerInfo>,
+}
+
+#[derive(Deserialize, Default)]
+struct EnrollServerInfo {
+    #[serde(rename = "CAChain", default)]
+    ca_chain: String,
+}
+
 // ===== Builder =====
 
 /// Builder for [`FabricCAClient`].
@@ -275,7 +345,11 @@ impl FabricCAClientBuilder {
 
     pub fn build(self) -> Result<FabricCAClient, BuilderError> {
         let url = self.url.ok_or(BuilderError::MissingParameter("url".into()))?;
-        let identity = self.identity.ok_or(BuilderError::MissingParameter("identity".into()))?;
+        // The identity is optional: `enroll` authenticates with basic auth
+        // (enrollment ID + secret) and therefore works without one. All
+        // token-authenticated operations return `FabricCAError::NotConfigured`
+        // when no identity was provided.
+        let identity = self.identity;
 
         #[cfg(target_arch = "wasm32")]
         let http_client = reqwest::Client::new();
@@ -324,7 +398,7 @@ fn full_error_chain(e: &dyn std::error::Error) -> String {
 /// Use [`FabricCAClientBuilder`] to construct an instance.
 pub struct FabricCAClient {
     base_url: String,
-    identity: Identity,
+    identity: Option<Identity>,
     http_client: reqwest::Client,
 }
 
@@ -456,6 +530,94 @@ impl FabricCAClient {
         self.check_response(parsed)
     }
 
+    /// Enrolls an identity: generates a fresh P-256 key pair and PKCS#10 CSR
+    /// locally, submits it with basic authentication (enrollment ID +
+    /// secret), and returns the issued certificate together with the private
+    /// key.
+    ///
+    /// Does not require the client to hold an [`Identity`]; this is the
+    /// bootstrap operation that produces one. The returned PEMs can be fed
+    /// directly into [`IdentityBuilder`](crate::identity::IdentityBuilder).
+    ///
+    /// TODO: attribute requests (`attr_reqs`) and CSR labels are not exposed
+    /// yet.
+    pub async fn enroll(&self, req: EnrollmentRequest) -> Result<EnrollmentResult, FabricCAError> {
+        let (csr_pem, key_pem) = generate_csr(&req.enrollment_id, &req.csr_hosts)?;
+        let body = EnrollBody {
+            certificate_request: &csr_pem,
+            profile: req.profile.as_deref(),
+            caname: req.ca_name.as_deref(),
+        };
+        let body_bytes =
+            serde_json::to_vec(&body).map_err(|e| FabricCAError::ParseError(e.to_string()))?;
+
+        use base64::Engine;
+        let basic = base64::engine::general_purpose::STANDARD
+            .encode(format!("{}:{}", req.enrollment_id, req.secret));
+        let raw = self
+            .http_client
+            .post(format!("{}/api/v1/enroll", self.base_url))
+            .header("Authorization", format!("Basic {}", basic))
+            .header("Content-Type", "application/json")
+            .body(body_bytes)
+            .send()
+            .await
+            .map_err(|e| FabricCAError::HttpError(full_error_chain(&e)))?;
+        let parsed = self.parse_response(raw).await?;
+        let result: EnrollResult = self.unwrap_response(parsed)?;
+        Self::enrollment_result(result, key_pem)
+    }
+
+    /// Re-enrolls the client's current identity, rotating its key pair and
+    /// certificate. Authenticated with the token signed by the *current*
+    /// identity (the client must have been built with one).
+    pub async fn reenroll(
+        &self,
+        req: ReenrollmentRequest,
+    ) -> Result<EnrollmentResult, FabricCAError> {
+        let (csr_pem, key_pem) = generate_csr(&req.enrollment_id, &req.csr_hosts)?;
+        let body = EnrollBody {
+            certificate_request: &csr_pem,
+            profile: req.profile.as_deref(),
+            caname: req.ca_name.as_deref(),
+        };
+        let body_bytes =
+            serde_json::to_vec(&body).map_err(|e| FabricCAError::ParseError(e.to_string()))?;
+        let raw = self
+            .authenticated_request(reqwest::Method::POST, "/api/v1/reenroll", &body_bytes)
+            .await?;
+        let parsed = self.parse_response(raw).await?;
+        let result: EnrollResult = self.unwrap_response(parsed)?;
+        Self::enrollment_result(result, key_pem)
+    }
+
+    fn enrollment_result(
+        result: EnrollResult,
+        key_pem: String,
+    ) -> Result<EnrollmentResult, FabricCAError> {
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD;
+        let certificate_pem = String::from_utf8(
+            b64.decode(result.cert.trim())
+                .map_err(|e| FabricCAError::ParseError(format!("invalid Cert base64: {e}")))?,
+        )
+        .map_err(|e| FabricCAError::ParseError(format!("certificate is not UTF-8: {e}")))?;
+        let ca_chain_pem = match result.server_info {
+            Some(info) if !info.ca_chain.is_empty() => String::from_utf8(
+                b64.decode(info.ca_chain.trim()).map_err(|e| {
+                    FabricCAError::ParseError(format!("invalid CAChain base64: {e}"))
+                })?,
+            )
+            .map_err(|e| FabricCAError::ParseError(format!("CA chain is not UTF-8: {e}")))?,
+            _ => String::new(),
+        };
+        Ok(EnrollmentResult {
+            certificate_pem,
+            private_key_pem: key_pem,
+            ca_chain_pem,
+        })
+    }
+
     // ----- private helpers -----
 
     async fn authenticated_get(&self, path: &str) -> Result<FabricCAResponse, FabricCAError> {
@@ -490,6 +652,8 @@ impl FabricCAClient {
     ) -> Result<reqwest::Response, FabricCAError> {
         let token = self
             .identity
+            .as_ref()
+            .ok_or(FabricCAError::NotConfigured)?
             .generate_fabric_ca_token(method.as_str(), path, body);
         self.http_client
             .request(method, format!("{}{}", self.base_url, path))
@@ -540,6 +704,61 @@ impl FabricCAClient {
             Err(FabricCAError::CAError(msg))
         }
     }
+}
+
+/// Generates a fresh P-256 key pair and a PKCS#10 CSR with `CN=<enrollment_id>`
+/// (and optional DNS SANs), both PEM-encoded. Returns `(csr_pem, key_pem)`.
+fn generate_csr(
+    enrollment_id: &str,
+    hosts: &[String],
+) -> Result<(String, String), FabricCAError> {
+    use ecdsa::elliptic_curve::pkcs8::EncodePrivateKey;
+    use std::str::FromStr;
+    use x509_cert::builder::{Builder, RequestBuilder};
+    use x509_cert::der::EncodePem;
+
+    let csr_err = |e: &dyn std::fmt::Display| FabricCAError::ParseError(format!("CSR generation failed: {e}"));
+
+    // Generate a P-256 private key from cryptographically secure random bytes.
+    // The probability of a candidate falling outside the field is ~2^-224;
+    // the loop exists for correctness, not because retries are expected.
+    let signing_key = loop {
+        let candidate: [u8; 32] = ecdsa::elliptic_curve::Generate::generate();
+        if let Ok(key) = ecdsa::SigningKey::<p256::NistP256>::from_slice(&candidate) {
+            break key;
+        }
+    };
+
+    let subject = x509_cert::name::Name::from_str(&format!("CN={}", enrollment_id))
+        .map_err(|e| csr_err(&e))?;
+    let mut builder = RequestBuilder::new(subject).map_err(|e| csr_err(&e))?;
+
+    if !hosts.is_empty() {
+        use x509_cert::ext::pkix::SubjectAltName;
+        use x509_cert::ext::pkix::name::GeneralName;
+        let mut names = Vec::with_capacity(hosts.len());
+        for host in hosts {
+            names.push(GeneralName::DnsName(
+                x509_cert::der::asn1::Ia5String::new(host).map_err(|e| csr_err(&e))?,
+            ));
+        }
+        builder
+            .add_extension(&SubjectAltName(names))
+            .map_err(|e| csr_err(&e))?;
+    }
+
+    let csr = builder
+        .build::<_, ecdsa::der::Signature<p256::NistP256>>(&signing_key)
+        .map_err(|e| csr_err(&e))?;
+    let csr_pem = csr
+        .to_pem(x509_cert::der::pem::LineEnding::LF)
+        .map_err(|e| csr_err(&e))?;
+    let key_pem = signing_key
+        .to_pkcs8_pem(x509_cert::der::pem::LineEnding::LF)
+        .map_err(|e| csr_err(&e))?
+        .to_string();
+
+    Ok((csr_pem, key_pem))
 }
 
 #[cfg(test)]

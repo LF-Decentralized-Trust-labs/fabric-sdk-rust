@@ -295,6 +295,19 @@ impl Client {
         crate::gateway::lifecycle::LifecycleClient::new(self)
     }
 
+    /// Creates a [`CsccClient`](crate::gateway::cscc::CsccClient) for channel management
+    /// operations (join channel, list channels, fetch channel configuration) on this
+    /// peer connection.
+    pub fn get_cscc_client(&self) -> crate::gateway::cscc::CsccClient<'_> {
+        crate::gateway::cscc::CsccClient::new(self)
+    }
+
+    /// Creates a [`QsccClient`](crate::gateway::qscc::QsccClient) for ledger queries
+    /// (chain info, blocks, transactions) on this peer connection.
+    pub fn get_qscc_client(&self) -> crate::gateway::qscc::QsccClient<'_> {
+        crate::gateway::qscc::QsccClient::new(self)
+    }
+
     /// Sends a signed proposal directly to the peer's legacy `Endorser.ProcessProposal` RPC.
     ///
     /// Used for channel-less lifecycle operations (e.g. install chaincode) that cannot

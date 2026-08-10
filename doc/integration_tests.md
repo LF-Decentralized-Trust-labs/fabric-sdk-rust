@@ -173,3 +173,39 @@ it into the source `fabric-ca-server-config.yaml` under
 - **`CAError("Identity 'sdk-test-user' is already registered")`** — left over
   from an aborted run on a CA that doesn't allow removal. Either enable
   `allowremove` and re-run, or bounce the CA so its SQLite DB is recreated.
+
+## Network-management test suites
+
+Two additional, self-contained suites cover the network-management features
+(system chaincode clients, channel config updates, orderer, osnadmin,
+operations, CA enrollment). Both are `#[ignore]`d by default and gated on
+environment variables, so plain `cargo test` never touches them.
+
+- **`tests/conformance.rs`** — cross-validates the Rust ConfigUpdate delta
+  computation (`gateway::configtx::compute_config_update`) against the
+  official `configtxlator compute_update` binary on a captured channel config
+  (`tests/resources/mychannel_config.pb`). Requires only `CONFIGTXLATOR_BIN`;
+  no running network. The updates are compared structurally; byte equality is
+  reported as well (and held in all scenarios exercised so far).
+
+  ```sh
+  CONFIGTXLATOR_BIN=/path/to/configtxlator cargo test --test conformance -- --ignored
+  ```
+
+- **`tests/network_management.rs`** — drives a live test network end to end:
+  cscc (join/list/config), qscc (chain info/blocks), orderer Broadcast +
+  Deliver, the osnadmin channel-participation API, the operations service and
+  CA enroll/reenroll. The `full_loop_create_channel_and_update_anchor_peers`
+  test creates a throwaway channel (`sdk-it-<epoch36>`), joins orderer and
+  peer, then performs a complete anchor-peer config update built and signed
+  entirely with this SDK. Requires `FABRIC_IT_BASE` pointing at the
+  test-network directory of a running network started with `-ca`.
+
+  ```sh
+  FABRIC_IT_BASE=~/fabric/fabric-samples/test-network \
+      cargo test --test network_management -- --ignored --test-threads=1
+  ```
+
+The launcher `./run_network_management_tests.sh` runs both suites with the
+right defaults. To refresh the conformance fixture from a live network, run
+the `capture_config_fixture` test in `tests/network_management.rs`.

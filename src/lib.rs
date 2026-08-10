@@ -6,12 +6,16 @@
 pub mod fabric {
     pub mod common;
     pub mod discovery;
+    pub mod etcdraft;
     pub mod gateway;
     pub mod google_protobuf;
     pub mod gossip;
     pub mod msp;
     pub mod lifecycle;
     pub mod orderer;
+    /// smartbft consensus options (proto package `orderer.smartbft`)
+    #[path = "orderer.smartbft.rs"]
+    pub mod smartbft;
     pub mod protos;
     #[cfg(feature = "chaincode")]
     pub mod queryresult;
@@ -31,6 +35,12 @@ pub mod gateway;
 pub mod identity;
 #[cfg(any(feature = "client", feature = "client-wasm"))]
 pub mod fabric_ca;
+/// Client for the operations service (health, version, logspec, metrics) of peers and orderers
+#[cfg(feature = "client")]
+pub mod operations;
+/// Client for the orderer channel-participation API (osnadmin)
+#[cfg(feature = "client")]
+pub mod osnadmin;
 /// Collection of functions for the fabric common structs
 #[cfg(any(feature = "chaincode", feature = "client", feature = "client-wasm"))]
 #[allow(dead_code)]
