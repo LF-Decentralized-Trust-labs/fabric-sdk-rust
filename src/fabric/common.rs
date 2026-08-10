@@ -781,3 +781,245 @@ pub struct BootstrappingSnapshotInfo {
     #[prost(uint64, tag = "1")]
     pub last_block_in_snapshot: u64,
 }
+/// ConfigEnvelope is designed to contain _all_ configuration for a chain with no dependency
+/// on previous configuration transactions.
+///
+/// It is generated with the following scheme:
+///    1. Retrieve the existing configuration
+///    2. Note the config properties (ConfigValue, ConfigPolicy, ConfigGroup) to be modified
+///    3. Add any intermediate ConfigGroups to the ConfigUpdate.read_set (sparsely)
+///    4. Add any additional desired dependencies to ConfigUpdate.read_set (sparsely)
+///    5. Modify the config properties, incrementing each version by 1, set them in the ConfigUpdate.write_set
+///       Note: any element not modified but specified should already be in the read_set, so may be specified sparsely
+///    6. Create ConfigUpdate message and marshal it into ConfigUpdateEnvelope.update and encode the required signatures
+///      a) Each signature is of type ConfigSignature
+///      b) The ConfigSignature signature is over the concatenation of signature_header and the ConfigUpdate bytes (which includes a ChainHeader)
+///    5. Submit new Config for ordering in Envelope signed by submitter
+///      a) The Envelope Payload has data set to the marshaled ConfigEnvelope
+///      b) The Envelope Payload has a header of type Header.Type.CONFIG_UPDATE
+///
+/// The configuration manager will verify:
+///    1. All items in the read_set exist at the read versions
+///    2. All items in the write_set at a different version than, or not in, the read_set have been appropriately signed according to their mod_policy
+///    3. The new configuration satisfies the ConfigSchema
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ConfigEnvelope {
+    /// A marshaled Config structure
+    #[prost(message, optional, tag = "1")]
+    pub config: ::core::option::Option<Config>,
+    /// The last CONFIG_UPDATE message which generated this current configuration
+    #[prost(message, optional, tag = "2")]
+    pub last_update: ::core::option::Option<Envelope>,
+}
+/// Config represents the config for a particular channel
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Config {
+    #[prost(uint64, tag = "1")]
+    pub sequence: u64,
+    /// channel_group is a bad name for this, it should be changed to root when API breakage is allowed
+    #[prost(message, optional, tag = "2")]
+    pub channel_group: ::core::option::Option<ConfigGroup>,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ConfigUpdateEnvelope {
+    /// A marshaled ConfigUpdate structure
+    #[prost(bytes = "vec", tag = "1")]
+    pub config_update: ::prost::alloc::vec::Vec<u8>,
+    /// Signatures over the config_update
+    #[prost(message, repeated, tag = "2")]
+    pub signatures: ::prost::alloc::vec::Vec<ConfigSignature>,
+}
+/// ConfigUpdate is used to submit a subset of config and to have the orderer apply to Config
+/// it is always submitted inside a ConfigUpdateEnvelope which allows the addition of signatures
+/// resulting in a new total configuration.  The update is applied as follows:
+/// 1. The versions from all of the elements in the read_set is verified against the versions in the existing config.
+///     If there is a mismatch in the read versions, then the config update fails and is rejected.
+/// 2. Any elements in the write_set with the same version as the read_set are ignored.
+/// 3. The corresponding mod_policy for every remaining element in the write_set is collected.
+/// 4. Each policy is checked against the signatures from the ConfigUpdateEnvelope, any failing to verify are rejected
+/// 5. The write_set is applied to the Config and the ConfigGroupSchema verifies that the updates were legal
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ConfigUpdate {
+    /// Which channel this config update is for
+    #[prost(string, tag = "1")]
+    pub channel_id: ::prost::alloc::string::String,
+    /// ReadSet explicitly lists the portion of the config which was read, this should be sparse with only Version set
+    #[prost(message, optional, tag = "2")]
+    pub read_set: ::core::option::Option<ConfigGroup>,
+    /// WriteSet lists the portion of the config which was written, this should included updated Versions
+    #[prost(message, optional, tag = "3")]
+    pub write_set: ::core::option::Option<ConfigGroup>,
+    /// Data which is not to be reflected in the resulting Config, but is still needed for some other purpose.  For instance, rscc_seed_data
+    #[prost(btree_map = "string, bytes", tag = "5")]
+    pub isolated_data: ::prost::alloc::collections::BTreeMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::vec::Vec<u8>,
+    >,
+}
+/// ConfigGroup is the hierarchical data structure for holding config
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ConfigGroup {
+    #[prost(uint64, tag = "1")]
+    pub version: u64,
+    #[prost(btree_map = "string, message", tag = "2")]
+    pub groups: ::prost::alloc::collections::BTreeMap<
+        ::prost::alloc::string::String,
+        ConfigGroup,
+    >,
+    #[prost(btree_map = "string, message", tag = "3")]
+    pub values: ::prost::alloc::collections::BTreeMap<
+        ::prost::alloc::string::String,
+        ConfigValue,
+    >,
+    #[prost(btree_map = "string, message", tag = "4")]
+    pub policies: ::prost::alloc::collections::BTreeMap<
+        ::prost::alloc::string::String,
+        ConfigPolicy,
+    >,
+    #[prost(string, tag = "5")]
+    pub mod_policy: ::prost::alloc::string::String,
+}
+/// ConfigValue represents an individual piece of config data
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ConfigValue {
+    #[prost(uint64, tag = "1")]
+    pub version: u64,
+    #[prost(bytes = "vec", tag = "2")]
+    pub value: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "3")]
+    pub mod_policy: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ConfigPolicy {
+    #[prost(uint64, tag = "1")]
+    pub version: u64,
+    #[prost(message, optional, tag = "2")]
+    pub policy: ::core::option::Option<Policy>,
+    #[prost(string, tag = "3")]
+    pub mod_policy: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ConfigSignature {
+    /// A marshaled SignatureHeader
+    #[prost(bytes = "vec", tag = "1")]
+    pub signature_header: ::prost::alloc::vec::Vec<u8>,
+    /// Signature over the concatenation signatureHeader bytes and config bytes
+    #[prost(bytes = "vec", tag = "2")]
+    pub signature: ::prost::alloc::vec::Vec<u8>,
+}
+/// HashingAlgorithm is encoded into the configuration transaction as a
+/// configuration item of type Chain with a Key of "HashingAlgorithm" and a
+/// Value of HashingAlgorithm as marshaled protobuf bytes
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct HashingAlgorithm {
+    /// SHA256 is currently the only supported and tested algorithm.
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+}
+/// BlockDataHashingStructure is encoded into the configuration transaction as a configuration item of
+/// type Chain with a Key of "BlockDataHashingStructure" and a Value of HashingAlgorithm as marshaled protobuf bytes
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct BlockDataHashingStructure {
+    /// width specifies the width of the Merkle tree to use when computing the BlockDataHash
+    /// in order to replicate flat hashing, set this width to MAX_UINT32
+    #[prost(uint32, tag = "1")]
+    pub width: u32,
+}
+/// OrdererAddresses is encoded into the configuration transaction as a configuration item of type Chain
+/// with a Key of "OrdererAddresses" and a Value of OrdererAddresses as marshaled protobuf bytes
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct OrdererAddresses {
+    #[prost(string, repeated, tag = "1")]
+    pub addresses: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+/// Consenter represents a consenting node (i.e. replica).
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Consenter {
+    #[prost(uint32, tag = "1")]
+    pub id: u32,
+    #[prost(string, tag = "2")]
+    pub host: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "3")]
+    pub port: u32,
+    #[prost(string, tag = "4")]
+    pub msp_id: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "5")]
+    pub identity: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "6")]
+    pub client_tls_cert: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "7")]
+    pub server_tls_cert: ::prost::alloc::vec::Vec<u8>,
+}
+/// Orderers is encoded into the configuration transaction as a configuration item of type Chain
+/// with a Key of "Orderers" and a Value of Orderers as marshaled protobuf bytes
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Orderers {
+    #[prost(message, repeated, tag = "1")]
+    pub consenter_mapping: ::prost::alloc::vec::Vec<Consenter>,
+}
+/// Consortium represents the consortium context in which the channel was created
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Consortium {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+}
+/// Capabilities message defines the capabilities a particular binary must implement
+/// for that binary to be able to safely participate in the channel.  The capabilities
+/// message is defined at the /Channel level, the /Channel/Application level, and the
+/// /Channel/Orderer level.
+///
+/// The /Channel level capabilties define capabilities which both the orderer and peer
+/// binaries must satisfy.  These capabilties might be things like a new MSP type,
+/// or a new policy type.
+///
+/// The /Channel/Orderer level capabilties define capabilities which must be supported
+/// by the orderer, but which have no bearing on the behavior of the peer.  For instance
+/// if the orderer changes the logic for how it constructs new channels, only all orderers
+/// must agree on the new logic.  The peers do not need to be aware of this change as
+/// they only interact with the channel after it has been constructed.
+///
+/// Finally, the /Channel/Application level capabilities define capabilities which the peer
+/// binary must satisfy, but which have no bearing on the orderer.  For instance, if the
+/// peer adds a new UTXO transaction type, or changes the chaincode lifecycle requirements,
+/// all peers must agree on the new logic.  However, orderers never inspect transactions
+/// this deeply, and therefore have no need to be aware of the change.
+///
+/// The capabilities strings defined in these messages typically correspond to release
+/// binary versions (e.g. "V1.1"), and are used primarilly as a mechanism for a fully
+/// upgraded network to switch from one set of logic to a new one.
+///
+/// Although for V1.1, the orderers must be upgraded to V1.1 prior to the rest of the
+/// network, going forward, because of the split between the /Channel, /Channel/Orderer
+/// and /Channel/Application capabilities.  It should be possible for the orderer and
+/// application networks to upgrade themselves independently (with the exception of any
+/// new capabilities defined at the /Channel level).
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Capabilities {
+    #[prost(map = "string, message", tag = "1")]
+    pub capabilities: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        Capability,
+    >,
+}
+/// Capability is an empty message for the time being.  It is defined as a protobuf
+/// message rather than a constant, so that we may extend capabilities with other fields
+/// if the need arises in the future.  For the time being, a capability being in the
+/// capabilities map requires that that capability be supported.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Capability {}

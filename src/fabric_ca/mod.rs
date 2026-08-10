@@ -1,5 +1,6 @@
 mod client;
 pub use client::{
-    Affiliation, CAAttribute, CAIdentity, CAInfo, FabricCAClient, FabricCAClientBuilder,
-    ModifyIdentityRequest, RegisterIdentityRequest, RevokeRequest,
+    Affiliation, CAAttribute, CAIdentity, CAInfo, EnrollmentRequest, EnrollmentResult,
+    FabricCAClient, FabricCAClientBuilder, ModifyIdentityRequest, ReenrollmentRequest,
+    RegisterIdentityRequest, RevokeRequest,
 };

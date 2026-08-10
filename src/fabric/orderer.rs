@@ -600,3 +600,101 @@ pub mod atomic_broadcast_server {
         const NAME: &'static str = SERVICE_NAME;
     }
 }
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ConsensusType {
+    /// The consensus type: "solo" or "etcdraft".
+    #[prost(string, tag = "1")]
+    pub r#type: ::prost::alloc::string::String,
+    /// Opaque metadata, dependent on the consensus type.
+    #[prost(bytes = "vec", tag = "2")]
+    pub metadata: ::prost::alloc::vec::Vec<u8>,
+    /// The state signals the ordering service to go into maintenance mode, typically for consensus-type migration.
+    #[prost(enumeration = "consensus_type::State", tag = "3")]
+    pub state: i32,
+}
+/// Nested message and enum types in `ConsensusType`.
+pub mod consensus_type {
+    /// State defines the orderer mode of operation, typically for consensus-type migration.
+    /// NORMAL is during normal operation, when consensus-type migration is not, and can not, take place.
+    /// MAINTENANCE is when the consensus-type can be changed.
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(
+        Clone,
+        Copy,
+        Debug,
+        PartialEq,
+        Eq,
+        Hash,
+        PartialOrd,
+        Ord,
+        ::prost::Enumeration
+    )]
+    #[repr(i32)]
+    pub enum State {
+        Normal = 0,
+        Maintenance = 1,
+    }
+    impl State {
+        /// String value of the enum field names used in the ProtoBuf definition.
+        ///
+        /// The values are not transformed in any way and thus are considered stable
+        /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+        pub fn as_str_name(&self) -> &'static str {
+            match self {
+                Self::Normal => "STATE_NORMAL",
+                Self::Maintenance => "STATE_MAINTENANCE",
+            }
+        }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "STATE_NORMAL" => Some(Self::Normal),
+                "STATE_MAINTENANCE" => Some(Self::Maintenance),
+                _ => None,
+            }
+        }
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct BatchSize {
+    /// Simply specified as number of messages for now, in the future
+    /// we may want to allow this to be specified by size in bytes
+    #[prost(uint32, tag = "1")]
+    pub max_message_count: u32,
+    /// The byte count of the serialized messages in a batch cannot
+    /// exceed this value.
+    #[prost(uint32, tag = "2")]
+    pub absolute_max_bytes: u32,
+    /// The byte count of the serialized messages in a batch should not
+    /// exceed this value.
+    #[prost(uint32, tag = "3")]
+    pub preferred_max_bytes: u32,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct BatchTimeout {
+    /// Any duration string parseable by ParseDuration():
+    /// <https://golang.org/pkg/time/#ParseDuration>
+    #[prost(string, tag = "1")]
+    pub timeout: ::prost::alloc::string::String,
+}
+/// Carries a list of bootstrap brokers, i.e. this is not the exclusive set of
+/// brokers an ordering service
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct KafkaBrokers {
+    /// Each broker here should be identified using the (IP|host):port notation,
+    /// e.g. 127.0.0.1:7050, or localhost:7050 are valid entries
+    #[prost(string, repeated, tag = "1")]
+    pub brokers: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+/// ChannelRestrictions is the mssage which conveys restrictions on channel creation for an orderer
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ChannelRestrictions {
+    /// The max count of channels to allow to be created, a value of 0 indicates no limit
+    #[prost(uint64, tag = "1")]
+    pub max_count: u64,
+}
