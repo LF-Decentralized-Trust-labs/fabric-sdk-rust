@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Fixed: a malformed chaincode invocation no longer ends the chaincode
+  process.** The invocation arguments were decoded with `expect` in the loop
+  that serves every transaction, outside the task that catches a contract
+  function's panics, so one proposal with a non-UTF-8 argument, or with no
+  arguments at all, killed the chaincode for every org on the channel. Such an
+  invocation is now answered with `BadRequest` for that transaction only.
+
 Network management: everything needed to create channels and maintain their
 configuration without external tooling (`configtxgen` excepted). All additions
 are additive; no existing public API changed.
