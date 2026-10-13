@@ -39,7 +39,11 @@ impl MessageHandler {
         tokio::spawn(async move {
             eprintln!("[Router] Starting router");
             router.run().await;
-            eprintln!("[Router] Router stopped");
+            // Without the stream to the peer the chaincode can serve nothing, yet
+            // the peer keeps routing transactions to it until it times out. Exit
+            // instead: the peer sees the process end and launches a fresh one.
+            eprintln!("[Router] Router stopped, exiting");
+            std::process::exit(1);
         });
 
         let mut message_builder = MessageBuilder::new(metadata, tx);
@@ -67,33 +71,32 @@ impl MessageHandler {
             eprintln!("[MessageHandler] Executing transaction {}", message.txid);
             match ChaincodeInput::decode(message.payload.as_slice()) {
                 Ok(input) => {
-                    //structname:functionname,arg1,arg2,arg3
-                    //First argument is the contract:function
-                    let arg_iter = input.args.iter();
-                    let arguments = arg_iter
-                        .map(|f| {
-                            String::from_utf8(f.clone())
-                                .expect("[MessageHandler] Invalid UTF-8 encoding")
-                        })
-                        .collect::<Vec<String>>();
-                    let contract_function = arguments
-                        .first()
-                        .expect("[MessageHandler] Expected first argument but found nothing")
-                        .split(":")
-                        .collect::<Vec<&str>>();
-
-                    let contract_name = if contract_function.len() > 1 {
-                        contract_function
-                            .first()
-                            .expect("[MessageHandler] Expected contract_name but found nothing")
-                    } else {
-                        ""
-                    };
-                    let function_name = contract_function
-                        .last()
-                        .expect("[MessageHandler] Expected function_name but found nothing");
-                    let response = match self.contracts.get(contract_name) {
-                        Some(contract) => match contract.get(*function_name) {
+                    let (contract_name, function_name, arguments) =
+                        match parse_invocation(&input.args) {
+                            Ok(invocation) => invocation,
+                            Err(reason) => {
+                                // Caller input: a malformed invocation fails this
+                                // one transaction, never the loop serving them all.
+                                eprintln!("[MessageHandler] Invalid invocation: {reason}");
+                                let response = Response {
+                                    status: Status::BadRequest.into(),
+                                    message: format!("Invalid chaincode invocation: {reason}"),
+                                    payload: vec![],
+                                };
+                                self.message_builder
+                                    .lock()
+                                    .await
+                                    .respond(
+                                        chaincode_message::Type::Completed,
+                                        response.encode_to_vec(),
+                                        message,
+                                    )
+                                    .await;
+                                continue;
+                            }
+                        };
+                    let response = match self.contracts.get(&contract_name) {
+                        Some(contract) => match contract.get(&function_name) {
                             Some(function) => {
                                 match function
                                     .call(
@@ -102,7 +105,7 @@ impl MessageHandler {
                                             message.clone(),
                                             self.peer_response_queue.clone(),
                                         ),
-                                        arguments.iter().skip(1).cloned().collect::<Vec<String>>(),
+                                        arguments,
                                     )
                                     .await
                                 {
@@ -178,5 +181,57 @@ impl MessageHandler {
             }
         }
         eprintln!("[MessageHandler] Channel closed")
+    }
+}
+
+/// Split an invocation's raw arguments into contract name, function name and
+/// the function's arguments — or say why they are malformed.
+///
+/// The first argument names the function as `contract:function` (just
+/// `function` for the default contract `""`); every argument must be UTF-8.
+/// All of it is caller input, so nothing here may panic: this runs in the
+/// loop that serves every transaction, outside the task that catches a
+/// contract function's panics.
+fn parse_invocation(args: &[Vec<u8>]) -> Result<(String, String, Vec<String>), String> {
+    let mut arguments = args
+        .iter()
+        .enumerate()
+        .map(|(i, arg)| {
+            String::from_utf8(arg.clone()).map_err(|_| format!("argument {i} is not valid UTF-8"))
+        })
+        .collect::<Result<Vec<String>, String>>()?;
+    if arguments.is_empty() {
+        return Err("no function name given".to_string());
+    }
+    let target = arguments.remove(0);
+    let parts: Vec<&str> = target.split(':').collect();
+    let contract_name = if parts.len() > 1 { parts[0] } else { "" };
+    let function_name = parts[parts.len() - 1];
+    Ok((contract_name.to_string(), function_name.to_string(), arguments))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_invocation;
+
+    fn args(list: &[&[u8]]) -> Vec<Vec<u8>> {
+        list.iter().map(|a| a.to_vec()).collect()
+    }
+
+    #[test]
+    fn a_well_formed_invocation_is_split() {
+        let parsed = parse_invocation(&args(&[b"Process:invoke_step", b"p1", b"7"])).unwrap();
+        assert_eq!(parsed, ("Process".into(), "invoke_step".into(), vec!["p1".into(), "7".into()]));
+        // No contract part: the default contract.
+        let parsed = parse_invocation(&args(&[b"whoami"])).unwrap();
+        assert_eq!(parsed, (String::new(), "whoami".into(), vec![]));
+    }
+
+    #[test]
+    fn a_malformed_invocation_is_an_error_not_a_panic() {
+        assert!(parse_invocation(&[]).unwrap_err().contains("no function name"));
+        let err = parse_invocation(&args(&[b"Process:get", &[0xff, 0xfe]])).unwrap_err();
+        assert!(err.contains("argument 1"), "{err}");
+        assert!(parse_invocation(&args(&[&[0xc3, 0x28]])).is_err());
     }
 }

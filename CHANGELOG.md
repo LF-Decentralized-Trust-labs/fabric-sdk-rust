@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Fixed: a peer message over 4 MiB no longer hangs the chaincode.** The
+  chaincode's stream to the peer used tonic's default 4 MiB decode limit, so a
+  large answer (e.g. a `GetStateByRange` over a grown ledger) broke the stream.
+  The process stayed alive and the peer timed out every following transaction
+  until the chaincode was restarted by hand. The limit is lifted (the peer
+  bounds what it sends), and a broken stream now ends the process so the peer
+  relaunches it.
+- **Fixed: a malformed chaincode invocation no longer ends the chaincode
+  process.** The invocation arguments were decoded with `expect` in the loop
+  that serves every transaction, outside the task that catches a contract
+  function's panics, so one proposal with a non-UTF-8 argument, or with no
+  arguments at all, killed the chaincode for every org on the channel. Such an
+  invocation is now answered with `BadRequest` for that transaction only.
+
 Network management: everything needed to create channels and maintain their
 configuration without external tooling (`configtxgen` excepted). All additions
 are additive; no existing public API changed.
