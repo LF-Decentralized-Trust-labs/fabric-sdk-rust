@@ -46,7 +46,12 @@ impl Router {
             .await
             .expect("[Router] Couldn't start gRPC channel");
 
-        let client = chaincode_support_client::ChaincodeSupportClient::new(channel.clone());
+        // The peer bounds what it sends (100 MiB by default), so the chaincode
+        // must not undercut it: tonic's 4 MiB default rejected a large
+        // GetStateByRange answer and broke the stream for every transaction.
+        let client = chaincode_support_client::ChaincodeSupportClient::new(channel.clone())
+            .max_decoding_message_size(usize::MAX)
+            .max_encoding_message_size(usize::MAX);
 
         Router {
             rx,
@@ -105,9 +110,11 @@ impl Router {
                     }
                 },
                 Err(err) => {
-                    let error_text =
-                        format!("[Router] Error receiving messages stream: Status {}", err);
-                    eprintln!("{}", error_text);
+                    // A failed frame leaves the stream unframed: everything after
+                    // it is garbage and the peer still believes we are connected.
+                    // Stop, so the process exits and the peer relaunches it.
+                    eprintln!("[Router] Error receiving messages stream: Status {}", err);
+                    return;
                 }
             }
         }

@@ -39,7 +39,11 @@ impl MessageHandler {
         tokio::spawn(async move {
             eprintln!("[Router] Starting router");
             router.run().await;
-            eprintln!("[Router] Router stopped");
+            // Without the stream to the peer the chaincode can serve nothing, yet
+            // the peer keeps routing transactions to it until it times out. Exit
+            // instead: the peer sees the process end and launches a fresh one.
+            eprintln!("[Router] Router stopped, exiting");
+            std::process::exit(1);
         });
 
         let mut message_builder = MessageBuilder::new(metadata, tx);
