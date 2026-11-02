@@ -79,9 +79,17 @@ impl Router {
                     }
                     Ok(chaincode_message::Type::Error) => {
                         eprintln!(
-                            "[Router] Received Error: -> {}",
+                            "[Router] Received Error for {}: -> {}",
+                            message.txid,
                             String::from_utf8_lossy(message.payload.as_slice())
                         );
+                        // The peer answers a failed ledger call (GetState,
+                        // PutState, ...) with ERROR instead of RESPONSE. The
+                        // transaction waiting for it must get it, or it waits
+                        // forever and so does every transaction after it.
+                        if let Err(err) = self.peer_response_queue.start_send(message) {
+                            eprintln!("[Router] Error sending peer error into queue: {}", err);
+                        }
                     }
                     Ok(chaincode_message::Type::Transaction) => {
                         eprintln!("[Router] Received transaction {}", message.txid);

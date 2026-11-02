@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Fixed: a peer ERROR reply no longer hangs the chaincode.** The peer
+  answers a failed ledger call (a rejected rich query or bookmark, a denied
+  private-data read, an invalid key) with `ERROR` instead of `RESPONSE`. The
+  router only logged it, so the `Context` call waited for a reply that never
+  came, and because transactions run one at a time, every later transaction
+  stalled until the process was restarted. One request with a garbage
+  pagination bookmark was enough. `ERROR` now reaches the waiting call, which
+  fails its transaction with the peer's message.
+- **Fixed: ledger calls of one transaction no longer take each other's
+  replies.** Each `Context` call now sends and receives under one lock and only
+  accepts a reply for its own transaction id, so concurrent calls (`join!`)
+  get their own answers and a stale reply is skipped.
 - **Fixed: gRPC-web calls work with tonic 0.14.6 and later.**
   `tonic-web-wasm-client` 0.8 parsed the gRPC-web trailer frame but never
   emitted it; tonic 0.14.6+ fails such a stream ("missing grpc-status
