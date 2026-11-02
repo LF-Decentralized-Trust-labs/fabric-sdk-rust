@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Fixed: gRPC-web calls work with tonic 0.14.6 and later.**
+  `tonic-web-wasm-client` 0.8 parsed the gRPC-web trailer frame but never
+  emitted it; tonic 0.14.6+ fails such a stream ("missing grpc-status
+  trailer"), so every browser call failed. Bumped to 0.9.2, which emits it.
 - **Fixed: a peer message over 4 MiB no longer hangs the chaincode.** The
   chaincode's stream to the peer used tonic's default 4 MiB decode limit, so a
   large answer (e.g. a `GetStateByRange` over a grown ledger) broke the stream.
