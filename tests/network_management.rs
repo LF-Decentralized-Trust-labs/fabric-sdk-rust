@@ -5,7 +5,7 @@
 //! All tests are `#[ignore]` and gated on the `FABRIC_IT_BASE` environment
 //! variable, which must point to a running test-network directory (the
 //! `fabric-samples`-style layout with an `organizations/` tree). See
-//! `run_network_management_tests.sh` for a ready-to-use launcher.
+//! `scripts/run_network_management_tests.sh` for a ready-to-use launcher.
 //!
 //! Environment variables (all optional except `FABRIC_IT_BASE`):
 //! - `FABRIC_IT_BASE`      — path to the test-network directory (required)

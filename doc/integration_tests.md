@@ -206,6 +206,6 @@ environment variables, so plain `cargo test` never touches them.
       cargo test --test network_management -- --ignored --test-threads=1
   ```
 
-The launcher `./run_network_management_tests.sh` runs both suites with the
+The launcher `scripts/run_network_management_tests.sh` runs both suites with the
 right defaults. To refresh the conformance fixture from a live network, run
 the `capture_config_fixture` test in `tests/network_management.rs`.
