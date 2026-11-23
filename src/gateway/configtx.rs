@@ -9,7 +9,8 @@
 //!    This is a faithful port of the Go implementation in
 //!    `hyperledger/fabric` `internal/configtxlator/update`.
 //! 2. Edit helpers ([`set_anchor_peers`], [`add_application_org`],
-//!    [`add_consenter`], [`remove_consenter`]) — typed recipes that mutate a
+//!    [`add_consenter`], [`remove_consenter`], [`update_consenter_tls`],
+//!    [`set_batch_size`], [`set_batch_timeout`]) — typed recipes that mutate a
 //!    decoded [`Config`] tree so the caller does not have to hand-edit
 //!    nested protobuf maps.
 //! 3. Organization building blocks ([`MspConfigBuilder`], [`org_policies`],
@@ -423,9 +424,9 @@ pub fn compute_config_update(
 // =====================================================================
 // Typed edit helpers
 //
-// Further recipes (capabilities, ACLs, batch size/timeout, orderer
-// addresses, channel/application policies) are intentionally not yet
-// implemented — TODO: add them following the same pattern once needed.
+// Further recipes (capabilities, ACLs, orderer addresses,
+// channel/application policies) are intentionally not yet implemented —
+// TODO: add them following the same pattern once needed.
 // =====================================================================
 
 const APPLICATION_GROUP: &str = "Application";
@@ -957,6 +958,90 @@ pub fn remove_consenter(
 
     consensus_type.metadata = metadata.encode_to_vec();
     value.value = consensus_type.encode_to_vec();
+    Ok(())
+}
+
+/// Replaces the TLS certificates (PEM) of the consenter with the given host
+/// and port, e.g. to rotate them before they expire. The orderer needs one
+/// config update per consenter whose certificates change.
+///
+/// Returns [`ConfigTxError::InvalidPem`] for a certificate that is not a
+/// PEM certificate, [`ConfigTxError::ElementNotFound`] if no consenter with
+/// that host and port exists and [`ConfigTxError::UnsupportedConsensusType`]
+/// if the channel does not use etcdraft.
+pub fn update_consenter_tls(
+    config: &mut Config,
+    host: &str,
+    port: u32,
+    client_tls_cert_pem: impl Into<Vec<u8>>,
+    server_tls_cert_pem: impl Into<Vec<u8>>,
+) -> Result<(), ConfigTxError> {
+    let client_tls_cert = client_tls_cert_pem.into();
+    let server_tls_cert = server_tls_cert_pem.into();
+    certificate_der("client_tls_cert".into(), &client_tls_cert)?;
+    certificate_der("server_tls_cert".into(), &server_tls_cert)?;
+
+    let (value, mut consensus_type, mut metadata) = consensus_metadata_mut(config)?;
+    let consenter = metadata
+        .consenters
+        .iter_mut()
+        .find(|c| c.host == host && c.port == port)
+        .ok_or_else(|| ConfigTxError::ElementNotFound(format!("Consenter {}:{}", host, port)))?;
+    consenter.client_tls_cert = client_tls_cert;
+    consenter.server_tls_cert = server_tls_cert;
+
+    consensus_type.metadata = metadata.encode_to_vec();
+    value.value = consensus_type.encode_to_vec();
+    Ok(())
+}
+
+fn orderer_value_mut<'a>(
+    config: &'a mut Config,
+    key: &str,
+) -> Result<&'a mut ConfigValue, ConfigTxError> {
+    channel_group_mut(config)?
+        .groups
+        .get_mut(ORDERER_GROUP)
+        .ok_or_else(|| ConfigTxError::ElementNotFound(ORDERER_GROUP.into()))?
+        .values
+        .get_mut(key)
+        .ok_or_else(|| ConfigTxError::ElementNotFound(format!("{}/{}", ORDERER_GROUP, key)))
+}
+
+/// Sets the orderer batch size: at most `max_message_count` messages and
+/// `absolute_max_bytes` per block, cut early at `preferred_max_bytes`.
+///
+/// Returns [`ConfigTxError::InvalidOrdererValue`] for values the orderer
+/// refuses (any of them 0, preferred above absolute) and
+/// [`ConfigTxError::ElementNotFound`] if the channel has no
+/// `Orderer/BatchSize` value.
+pub fn set_batch_size(
+    config: &mut Config,
+    max_message_count: u32,
+    absolute_max_bytes: u32,
+    preferred_max_bytes: u32,
+) -> Result<(), ConfigTxError> {
+    let batch_size = BatchSize {
+        max_message_count,
+        absolute_max_bytes,
+        preferred_max_bytes,
+    };
+    validate_batch_size(&batch_size)?;
+    orderer_value_mut(config, BATCH_SIZE_KEY)?.value = batch_size.encode_to_vec();
+    Ok(())
+}
+
+/// Sets the orderer batch timeout, a Go duration string (`"2s"`, `"500ms"`).
+///
+/// Returns [`ConfigTxError::InvalidOrdererValue`] for a malformed or
+/// non-positive duration and [`ConfigTxError::ElementNotFound`] if the
+/// channel has no `Orderer/BatchTimeout` value.
+pub fn set_batch_timeout(config: &mut Config, timeout: &str) -> Result<(), ConfigTxError> {
+    validate_batch_timeout(timeout)?;
+    orderer_value_mut(config, BATCH_TIMEOUT_KEY)?.value = BatchTimeout {
+        timeout: timeout.to_string(),
+    }
+    .encode_to_vec();
     Ok(())
 }
 
@@ -3148,6 +3233,114 @@ JN5N0qJEtUIB1daOzzQEwQ0cJ4c+DaXwdBiU15hTDzE=
             Err(ConfigTxError::InvalidPem { field, .. }) => {
                 assert_eq!(field, "consenters[1].server_tls_cert")
             }
+            other => panic!("expected InvalidPem, got {:?}", other),
+        }
+    }
+
+    // =========================================================
+    // Orderer edit helpers
+    // =========================================================
+
+    #[test]
+    fn set_batch_size_changes_only_the_batch_size_value() {
+        let original = minimal_genesis().build_config().unwrap();
+        let mut updated = original.clone();
+        set_batch_size(&mut updated, 20, 4 * 1024 * 1024, 1024 * 1024).unwrap();
+
+        let update = compute_config_update(&original, &updated, "testchannel").unwrap();
+        let orderer = &update.write_set.unwrap().groups["Orderer"];
+        assert_eq!(orderer.values.len(), 1);
+        let value = &orderer.values["BatchSize"];
+        assert_eq!(value.version, 1);
+        let batch_size = BatchSize::decode(value.value.as_slice()).unwrap();
+        assert_eq!(
+            (
+                batch_size.max_message_count,
+                batch_size.absolute_max_bytes,
+                batch_size.preferred_max_bytes
+            ),
+            (20, 4 * 1024 * 1024, 1024 * 1024)
+        );
+    }
+
+    #[test]
+    fn set_batch_size_rejects_invalid_values_and_missing_value() {
+        let mut config = minimal_genesis().build_config().unwrap();
+        for (count, absolute, preferred) in [(0, 10, 10), (10, 0, 10), (10, 10, 0), (10, 10, 11)] {
+            match set_batch_size(&mut config, count, absolute, preferred) {
+                Err(ConfigTxError::InvalidOrdererValue { field, .. }) => {
+                    assert_eq!(field, "batch size")
+                }
+                other => panic!("expected InvalidOrdererValue, got {:?}", other),
+            }
+        }
+        match set_batch_size(&mut realistic_config(), 10, 10, 10) {
+            Err(ConfigTxError::ElementNotFound(what)) => assert_eq!(what, "Orderer/BatchSize"),
+            other => panic!("expected ElementNotFound, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn set_batch_timeout_validates_go_durations() {
+        let mut config = minimal_genesis().build_config().unwrap();
+        set_batch_timeout(&mut config, "1m30s").unwrap();
+        let value =
+            &config.channel_group.as_ref().unwrap().groups["Orderer"].values["BatchTimeout"];
+        assert_eq!(
+            BatchTimeout::decode(value.value.as_slice())
+                .unwrap()
+                .timeout,
+            "1m30s"
+        );
+        for bad in ["", "90", "-1s", "0s"] {
+            match set_batch_timeout(&mut config, bad) {
+                Err(ConfigTxError::InvalidOrdererValue { field, .. }) => {
+                    assert_eq!(field, "batch timeout")
+                }
+                other => panic!("expected InvalidOrdererValue for {bad:?}, got {:?}", other),
+            }
+        }
+    }
+
+    #[test]
+    fn update_consenter_tls_replaces_both_certificates() {
+        let mut config = minimal_genesis().build_config().unwrap();
+        update_consenter_tls(
+            &mut config,
+            "orderer.example.com",
+            7050,
+            TEST_CERT_2,
+            TEST_CERT_2,
+        )
+        .unwrap();
+        let orderer = &config.channel_group.as_ref().unwrap().groups["Orderer"];
+        let consensus =
+            ConsensusType::decode(orderer.values["ConsensusType"].value.as_slice()).unwrap();
+        let metadata = etcdraft::ConfigMetadata::decode(consensus.metadata.as_slice()).unwrap();
+        assert_eq!(metadata.consenters.len(), 1);
+        assert_eq!(
+            metadata.consenters[0].client_tls_cert,
+            TEST_CERT_2.as_bytes()
+        );
+        assert_eq!(
+            metadata.consenters[0].server_tls_cert,
+            TEST_CERT_2.as_bytes()
+        );
+        // Options are kept.
+        assert_eq!(metadata.options.unwrap().tick_interval, "500ms");
+
+        match update_consenter_tls(&mut config, "other", 7050, TEST_CERT_1, TEST_CERT_1) {
+            Err(ConfigTxError::ElementNotFound(what)) => assert!(what.contains("other:7050")),
+            other => panic!("expected ElementNotFound, got {:?}", other),
+        }
+        match update_consenter_tls(
+            &mut config,
+            "orderer.example.com",
+            7050,
+            TEST_CERT_1,
+            "garbage",
+        ) {
+            Err(ConfigTxError::InvalidPem { field, .. }) => assert_eq!(field, "server_tls_cert"),
             other => panic!("expected InvalidPem, got {:?}", other),
         }
     }

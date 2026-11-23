@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **`configtx::set_batch_size`, `configtx::set_batch_timeout`,
+  `configtx::update_consenter_tls`**: edit helpers for the orderer batch
+  settings and for rotating a consenter's TLS certificates. Values the
+  orderer would refuse are rejected with `InvalidOrdererValue` (same checks
+  as `GenesisBuilder`), certificates must be PEM.
 - **`configtx::GenesisBuilder`**: builds the genesis block of an application
   channel (no system channel; join orderers through osnadmin) from
   `ApplicationOrg`s, `OrdererOrg`s, etcdraft consenters, batch size and
