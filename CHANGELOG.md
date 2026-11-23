@@ -7,6 +7,16 @@
   an application or orderer organization with NodeOUs, ready for
   `add_application_org`. Byte-identical to `configtxgen -printOrg` for the
   test-network's `Org1MSP` and `OrdererOrg` (`tests/configtx_fixtures.rs`).
+- **`configtx::MspConfigBuilder`**: builds an org's FABRIC `MspConfig` from
+  PEM input (root, intermediate, TLS root/intermediate certificates,
+  revocation list, NodeOUs bound to a CA certificate, SHA2/SHA256 crypto
+  config) without an MSP directory. NodeOU roles are the proto's
+  `MspRoleType` (`Member` is rejected). Every input is parsed; a NodeOU
+  certificate must be one of the MSP's root or intermediate certificates.
+  Byte-identical to `configtxgen -printOrg` for the test-network orgs.
+  `ConfigTxError` gains `MissingMspField`, `InvalidPem`, `InvalidNodeOuRole`
+  and `NodeOuCertNotInChain` (the enum is not `#[non_exhaustive]`, so an
+  exhaustive `match` on it needs the new arms).
 - **`collection::role_or_policy`**: `OR('<msp>.<role>', ...)` signature
   policy over any MSP roles; `member_or_policy` now delegates to it.
 

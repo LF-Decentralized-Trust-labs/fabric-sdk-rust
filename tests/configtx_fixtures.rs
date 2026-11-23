@@ -21,8 +21,11 @@
 use std::path::PathBuf;
 
 use fabric_sdk::{
-    fabric::common::{Config, ConfigGroup, SignaturePolicyEnvelope},
-    gateway::configtx,
+    fabric::{
+        common::{Config, ConfigGroup, SignaturePolicyEnvelope},
+        msp::{FabricMspConfig, MspConfig},
+    },
+    gateway::configtx::{self, MspConfigBuilder},
     prelude::Message,
 };
 
@@ -93,4 +96,83 @@ fn org_policies_match_configtxgen() {
 fn orderer_org_policies_match_configtxgen() {
     let (_, orderer_org) = fixture_orgs();
     assert_policies_match(&configtx::orderer_org_policies("OrdererMSP"), &orderer_org);
+}
+
+/// Decodes the org group's `MSP` value into `(MSPConfig, FabricMSPConfig)`.
+fn fixture_msp(org: &ConfigGroup) -> (MspConfig, FabricMspConfig) {
+    let value = &org.values["MSP"];
+    assert_eq!(value.mod_policy, "Admins");
+    let msp = MspConfig::decode(value.value.as_slice()).unwrap();
+    let fabric = FabricMspConfig::decode(msp.config.as_slice()).unwrap();
+    (msp, fabric)
+}
+
+fn assert_msp_matches(built: MspConfig, fixture: &ConfigGroup) {
+    let (expected, expected_fabric) = fixture_msp(fixture);
+    assert_eq!(built.r#type, expected.r#type);
+    let built_fabric = FabricMspConfig::decode(built.config.as_slice()).unwrap();
+    assert_eq!(built_fabric, expected_fabric);
+    // Same field order and certificate bytes as Go's proto.Marshal.
+    assert_eq!(built.config, expected.config);
+}
+
+#[test]
+fn msp_config_matches_configtxgen_org1() {
+    let (org1, _) = fixture_orgs();
+    let ca = resource("ca.org1.example.com-cert.pem");
+    let msp = MspConfigBuilder::new("Org1MSP")
+        .with_root_cert(ca.clone())
+        .with_tls_root_cert(resource("tlsca.org1.example.com-cert.pem"))
+        .with_node_ous(ca)
+        .build()
+        .unwrap();
+    assert_msp_matches(msp, &org1);
+}
+
+#[test]
+fn msp_config_matches_configtxgen_orderer_org() {
+    let (_, orderer_org) = fixture_orgs();
+    let ca = resource("ca.example.com-cert.pem");
+    let msp = MspConfigBuilder::new("OrdererMSP")
+        .with_root_cert(ca.clone())
+        .with_tls_root_cert(resource("tlsca.example.com-cert.pem"))
+        .with_node_ous(ca)
+        .build()
+        .unwrap();
+    assert_msp_matches(msp, &orderer_org);
+}
+
+/// MspConfigBuilder + org_policies + add_application_org compose to the
+/// org group configtxgen emits.
+#[test]
+fn added_application_org_matches_configtxgen() {
+    let (org1, _) = fixture_orgs();
+    let ca = resource("ca.org1.example.com-cert.pem");
+    let msp = MspConfigBuilder::new("Org1MSP")
+        .with_root_cert(ca.clone())
+        .with_tls_root_cert(resource("tlsca.org1.example.com-cert.pem"))
+        .with_node_ous(ca)
+        .build()
+        .unwrap();
+
+    let application = ConfigGroup {
+        mod_policy: "Admins".into(),
+        ..Default::default()
+    };
+    let mut channel = ConfigGroup::default();
+    channel.groups.insert("Application".into(), application);
+    let mut config = Config {
+        sequence: 0,
+        channel_group: Some(channel),
+    };
+    configtx::add_application_org(
+        &mut config,
+        "Org1MSP",
+        &msp,
+        configtx::org_policies("Org1MSP"),
+    )
+    .unwrap();
+
+    let added = &config.channel_group.unwrap().groups["Application"].groups["Org1MSP"];
+    assert_eq!(added, &org1);
 }

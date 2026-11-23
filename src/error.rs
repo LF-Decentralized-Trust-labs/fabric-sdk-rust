@@ -91,6 +91,17 @@ pub enum ConfigTxError {
     AlreadyExists(String),
     /// The channel uses a consensus type the helper cannot edit (e.g. not `etcdraft`).
     UnsupportedConsensusType(String),
+    /// A required MSP field was not set (`"msp id"` or `"root certificate"`).
+    MissingMspField(&'static str),
+    /// A PEM input is not a single parseable X.509 certificate (or CRL, for
+    /// the revocation list). `field` names the input, e.g. `root_certs[1]`.
+    InvalidPem { field: String, reason: String },
+    /// A NodeOU identifier was set for a role that has none (`Member`).
+    InvalidNodeOuRole(crate::fabric::common::msp_role::MspRoleType),
+    /// A NodeOU identifier is bound to a certificate that is neither a root
+    /// nor an intermediate certificate of the MSP. Fabric rejects such an MSP
+    /// when it is loaded from the channel config.
+    NodeOuCertNotInChain(crate::fabric::common::msp_role::MspRoleType),
 }
 
 impl std::error::Error for ConfigTxError {}
@@ -114,6 +125,18 @@ impl std::fmt::Display for ConfigTxError {
             ConfigTxError::UnsupportedConsensusType(t) => {
                 write!(f, "Unsupported consensus type: {}", t)
             }
+            ConfigTxError::MissingMspField(field) => write!(f, "MSP config has no {}", field),
+            ConfigTxError::InvalidPem { field, reason } => {
+                write!(f, "Invalid PEM in {}: {}", field, reason)
+            }
+            ConfigTxError::InvalidNodeOuRole(role) => {
+                write!(f, "Role {} has no NodeOU", role.as_str_name())
+            }
+            ConfigTxError::NodeOuCertNotInChain(role) => write!(
+                f,
+                "Certificate of the {} NodeOU is not a root or intermediate certificate of the MSP",
+                role.as_str_name()
+            ),
         }
     }
 }

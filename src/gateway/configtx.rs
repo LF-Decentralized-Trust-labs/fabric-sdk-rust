@@ -11,7 +11,11 @@
 //!    [`add_consenter`], [`remove_consenter`]) — typed recipes that mutate a
 //!    decoded [`Config`] tree so the caller does not have to hand-edit
 //!    nested protobuf maps.
-//! 3. Signing and envelope assembly ([`sign_config_update`],
+//! 3. Organization building blocks ([`MspConfigBuilder`], [`org_policies`],
+//!    [`orderer_org_policies`]) — the `MSP` value and the standard policies
+//!    of an organization, as `configtxgen` derives them from an MSP
+//!    directory and `configtx.yaml`, built from PEM input.
+//! 4. Signing and envelope assembly ([`sign_config_update`],
 //!    [`create_config_update_envelope`], [`add_signature`],
 //!    [`build_config_update_transaction`]) — produce the signed
 //!    `CONFIG_UPDATE` [`Envelope`] to submit to the orderer (see
@@ -23,9 +27,20 @@
 //! # Multi-organization signature collection
 //!
 //! A config update often needs signatures from several organizations before
-//! it satisfies the mod policy of the elements it touches. The intended flow:
+//! it satisfies the mod policy of the elements it touches. Admitting a new
+//! organization, for example, changes the `Application` group, whose mod
+//! policy is `MAJORITY Admins` of the existing orgs. The intended flow:
 //!
 //! ```rust
+//! // Org1 adds Org3 from the PEMs Org3 handed over
+//! let org3_msp = MspConfigBuilder::new("Org3MSP")
+//!     .with_root_cert(org3_ca_pem.clone())
+//!     .with_tls_root_cert(org3_tlsca_pem)
+//!     .with_node_ous(org3_ca_pem)
+//!     .build()?;
+//! let mut updated = original.clone();
+//! add_application_org(&mut updated, "Org3MSP", &org3_msp, org_policies("Org3MSP"))?;
+//!
 //! // Org1 computes the update and signs it
 //! let update = compute_config_update(&original, &updated, "mychannel")?;
 //! let mut envelope = create_config_update_envelope(&update);
@@ -51,7 +66,7 @@ use crate::{
             SignatureHeader, msp_role::MspRoleType, policy::PolicyType,
         },
         etcdraft,
-        msp::MspConfig,
+        msp::{FabricCryptoConfig, FabricMspConfig, FabricNodeOUs, FabricOuIdentifier, MspConfig},
         orderer::ConsensusType,
         protos::{AnchorPeer, AnchorPeers},
     },
@@ -61,6 +76,13 @@ use crate::{
 };
 
 use std::collections::BTreeMap;
+
+use x509_cert::{
+    Certificate,
+    certificate::Rfc5280,
+    crl::CertificateList,
+    der::{DecodePem, Encode},
+};
 
 // =====================================================================
 // ConfigUpdate delta computation
@@ -461,7 +483,8 @@ pub fn set_anchor_peers(
 /// Inserts `channel_group.groups["Application"].groups[msp_id]` with the
 /// given [`MspConfig`] (as the org's `MSP` config value) and the given
 /// policies (typically `Readers`/`Writers`/`Admins`/`Endorsement`
-/// signature policies referring to the org's MSP roles).
+/// signature policies referring to the org's MSP roles). Build them with
+/// [`MspConfigBuilder`] and [`org_policies`].
 ///
 /// Returns [`ConfigTxError::AlreadyExists`] if the org is already part of the
 /// channel and [`ConfigTxError::ElementNotFound`] if the channel has no
@@ -592,6 +615,243 @@ pub fn orderer_org_policies(msp_id: &str) -> BTreeMap<String, ConfigPolicy> {
             signature_config_policy(&[(msp_id, Admin)]),
         ),
     ])
+}
+
+/// `MSPConfig.type` of a FABRIC (X.509) MSP (`msp.FABRIC` in Fabric).
+const FABRIC_MSP_TYPE: i32 = 0;
+
+/// The roles a NodeOU identifier can stand for, in `FabricNodeOUs` field
+/// order. `Member` is not one: it means any valid identity of the MSP.
+const NODE_OU_ROLES: [MspRoleType; 4] = [
+    MspRoleType::Client,
+    MspRoleType::Peer,
+    MspRoleType::Admin,
+    MspRoleType::Orderer,
+];
+
+/// The OU value Fabric CA and cryptogen put into certificates of a NodeOU
+/// role (`client`, `peer`, `admin`, `orderer`); `None` for `Member`.
+fn default_node_ou(role: MspRoleType) -> Option<&'static str> {
+    match role {
+        MspRoleType::Client => Some("client"),
+        MspRoleType::Peer => Some("peer"),
+        MspRoleType::Admin => Some("admin"),
+        MspRoleType::Orderer => Some("orderer"),
+        MspRoleType::Member => None,
+    }
+}
+
+/// Builds the [`MspConfig`] of a FABRIC (X.509) MSP for a channel config,
+/// the value `configtxgen` derives from an org's MSP directory
+/// (`msp.GetVerifyingMspConfig`).
+///
+/// Certificates and the revocation list are passed as PEM and stored byte
+/// for byte, as `configtxgen` stores the file contents. [`build`](Self::build)
+/// checks every input; it does not check validity periods or chains.
+///
+/// ```rust
+/// let msp = MspConfigBuilder::new("Org3MSP")
+///     .with_root_cert(ca_pem.clone())
+///     .with_tls_root_cert(tlsca_pem)
+///     .with_node_ous(ca_pem)
+///     .build()?;
+/// add_application_org(&mut config, "Org3MSP", &msp, org_policies("Org3MSP"))?;
+/// ```
+#[derive(Clone, Debug)]
+pub struct MspConfigBuilder {
+    msp_id: String,
+    root_certs: Vec<Vec<u8>>,
+    intermediate_certs: Vec<Vec<u8>>,
+    tls_root_certs: Vec<Vec<u8>>,
+    tls_intermediate_certs: Vec<Vec<u8>>,
+    revocation_list: Vec<Vec<u8>>,
+    /// `(role, OU identifier, optional certificate)` in call order; a later
+    /// entry for the same role replaces an earlier one. Empty: NodeOUs off.
+    node_ous: Vec<(MspRoleType, String, Option<Vec<u8>>)>,
+}
+
+impl MspConfigBuilder {
+    /// Starts an MSP config for the given MSP ID.
+    pub fn new(msp_id: impl Into<String>) -> Self {
+        MspConfigBuilder {
+            msp_id: msp_id.into(),
+            root_certs: vec![],
+            intermediate_certs: vec![],
+            tls_root_certs: vec![],
+            tls_intermediate_certs: vec![],
+            revocation_list: vec![],
+            node_ous: vec![],
+        }
+    }
+
+    /// Adds a root CA certificate (PEM). At least one is required.
+    pub fn with_root_cert(mut self, pem: impl Into<Vec<u8>>) -> Self {
+        self.root_certs.push(pem.into());
+        self
+    }
+
+    /// Adds an intermediate CA certificate (PEM).
+    pub fn with_intermediate_cert(mut self, pem: impl Into<Vec<u8>>) -> Self {
+        self.intermediate_certs.push(pem.into());
+        self
+    }
+
+    /// Adds a TLS root CA certificate (PEM).
+    pub fn with_tls_root_cert(mut self, pem: impl Into<Vec<u8>>) -> Self {
+        self.tls_root_certs.push(pem.into());
+        self
+    }
+
+    /// Adds a TLS intermediate CA certificate (PEM).
+    pub fn with_tls_intermediate_cert(mut self, pem: impl Into<Vec<u8>>) -> Self {
+        self.tls_intermediate_certs.push(pem.into());
+        self
+    }
+
+    /// Adds a certificate revocation list (PEM, `X509 CRL`).
+    pub fn with_revocation_list(mut self, crl_pem: impl Into<Vec<u8>>) -> Self {
+        self.revocation_list.push(crl_pem.into());
+        self
+    }
+
+    /// Enables NodeOUs with the four standard identifiers (`client`, `peer`,
+    /// `admin`, `orderer`), each bound to `ca_cert_pem`. This is the
+    /// `config.yaml` that cryptogen and Fabric CA deployments generate.
+    ///
+    /// `ca_cert_pem` must also be added as a root or intermediate
+    /// certificate.
+    pub fn with_node_ous(mut self, ca_cert_pem: impl Into<Vec<u8>>) -> Self {
+        let cert = ca_cert_pem.into();
+        for role in NODE_OU_ROLES {
+            let ou = default_node_ou(role).unwrap_or_default();
+            self = self.with_node_ou(role, ou, Some(cert.clone()));
+        }
+        self
+    }
+
+    /// Enables NodeOUs and sets the identifier of one role: certificates
+    /// whose OU is `ou_identifier` are classified as `role`. With
+    /// `certificate` set, only certificates issued by that root or
+    /// intermediate CA are.
+    ///
+    /// `role` is `Client`, `Peer`, `Admin` or `Orderer`; [`build`](Self::build)
+    /// rejects `Member`, which has no NodeOU.
+    pub fn with_node_ou(
+        mut self,
+        role: MspRoleType,
+        ou_identifier: impl Into<String>,
+        certificate: Option<Vec<u8>>,
+    ) -> Self {
+        self.node_ous
+            .push((role, ou_identifier.into(), certificate));
+        self
+    }
+
+    /// Validates the inputs and builds the FABRIC [`MspConfig`]
+    /// (`type` 0, `config` = encoded [`FabricMspConfig`]).
+    ///
+    /// Errors:
+    /// - [`ConfigTxError::MissingMspField`] without MSP ID or root
+    ///   certificate,
+    /// - [`ConfigTxError::InvalidPem`] for an input that is not exactly one
+    ///   PEM certificate (CRL for the revocation list),
+    /// - [`ConfigTxError::InvalidNodeOuRole`] for a NodeOU set for
+    ///   `MspRoleType::Member`,
+    /// - [`ConfigTxError::NodeOuCertNotInChain`] for a NodeOU certificate
+    ///   that is not one of the root or intermediate certificates.
+    pub fn build(self) -> Result<MspConfig, ConfigTxError> {
+        Ok(MspConfig {
+            r#type: FABRIC_MSP_TYPE,
+            config: self.build_fabric_config()?.encode_to_vec(),
+        })
+    }
+
+    /// Like [`build`](Self::build), but returns the [`FabricMspConfig`]
+    /// before encoding.
+    pub fn build_fabric_config(self) -> Result<FabricMspConfig, ConfigTxError> {
+        if self.msp_id.is_empty() {
+            return Err(ConfigTxError::MissingMspField("msp id"));
+        }
+        if self.root_certs.is_empty() {
+            return Err(ConfigTxError::MissingMspField("root certificate"));
+        }
+
+        let root_ders = certificates_der("root_certs", &self.root_certs)?;
+        let intermediate_ders = certificates_der("intermediate_certs", &self.intermediate_certs)?;
+        certificates_der("tls_root_certs", &self.tls_root_certs)?;
+        certificates_der("tls_intermediate_certs", &self.tls_intermediate_certs)?;
+        for (i, crl) in self.revocation_list.iter().enumerate() {
+            CertificateList::<Rfc5280>::from_pem(crl).map_err(|e| ConfigTxError::InvalidPem {
+                field: format!("revocation_list[{}]", i),
+                reason: e.to_string(),
+            })?;
+        }
+
+        let fabric_node_ous = if self.node_ous.is_empty() {
+            None
+        } else {
+            let mut ou_identifiers: [Option<FabricOuIdentifier>; 4] = Default::default();
+            for (role, ou, certificate) in self.node_ous {
+                let Some(slot) = NODE_OU_ROLES.iter().position(|r| *r == role) else {
+                    return Err(ConfigTxError::InvalidNodeOuRole(role));
+                };
+                let certificate = certificate.unwrap_or_default();
+                if !certificate.is_empty() {
+                    let field = format!("node_ous.{}", role.as_str_name().to_lowercase());
+                    let der = certificate_der(field, &certificate)?;
+                    if !root_ders.contains(&der) && !intermediate_ders.contains(&der) {
+                        return Err(ConfigTxError::NodeOuCertNotInChain(role));
+                    }
+                }
+                ou_identifiers[slot] = Some(FabricOuIdentifier {
+                    certificate,
+                    organizational_unit_identifier: ou,
+                });
+            }
+            let [client, peer, admin, orderer] = ou_identifiers;
+            Some(FabricNodeOUs {
+                enable: true,
+                client_ou_identifier: client,
+                peer_ou_identifier: peer,
+                admin_ou_identifier: admin,
+                orderer_ou_identifier: orderer,
+            })
+        };
+
+        Ok(FabricMspConfig {
+            name: self.msp_id,
+            root_certs: self.root_certs,
+            intermediate_certs: self.intermediate_certs,
+            admins: vec![],
+            revocation_list: self.revocation_list,
+            signing_identity: None,
+            organizational_unit_identifiers: vec![],
+            crypto_config: Some(FabricCryptoConfig {
+                signature_hash_family: "SHA2".into(),
+                identity_identifier_hash_function: "SHA256".into(),
+            }),
+            tls_root_certs: self.tls_root_certs,
+            tls_intermediate_certs: self.tls_intermediate_certs,
+            fabric_node_ous,
+        })
+    }
+}
+
+/// Parses exactly one PEM `CERTIFICATE` and returns its DER encoding.
+fn certificate_der(field: String, pem: &[u8]) -> Result<Vec<u8>, ConfigTxError> {
+    Certificate::from_pem(pem)
+        .and_then(|cert| cert.to_der())
+        .map_err(|e| ConfigTxError::InvalidPem {
+            field,
+            reason: e.to_string(),
+        })
+}
+
+fn certificates_der(field: &str, pems: &[Vec<u8>]) -> Result<Vec<Vec<u8>>, ConfigTxError> {
+    pems.iter()
+        .enumerate()
+        .map(|(i, pem)| certificate_der(format!("{}[{}]", field, i), pem))
+        .collect()
 }
 
 fn consensus_metadata_mut(
@@ -1594,6 +1854,179 @@ BAUwAwEB/zAKBggqhkjOPQQDAgNIADBFAiB9F+bNbxzviGs2yu8QPEuEDKK8Tryu
         match add_consenter(&mut config, etcdraft::Consenter::default()) {
             Err(ConfigTxError::UnsupportedConsensusType(t)) => assert_eq!(t, "BFT"),
             other => panic!("expected UnsupportedConsensusType, got {:?}", other),
+        }
+    }
+
+    // =========================================================
+    // MspConfigBuilder
+    // =========================================================
+
+    // Empty CRL issued by a throwaway P-256 CA (openssl ca -gencrl).
+    const TEST_CRL: &str = "-----BEGIN X509 CRL-----
+MIGtMFUCAQEwCgYIKoZIzj0EAwIwFjEUMBIGA1UEAwwLY3JsLXRlc3QtY2EXDTI2
+MTEyMzA4NTEyMVoXDTQ2MTExODA4NTEyMVqgDjAMMAoGA1UdFAQDAgEBMAoGCCqG
+SM49BAMCA0gAMEUCIQCDEFQFBjGdr+Cdc6byGb6pOEJ4CRRusjWshfpv+dUZhQIg
+JN5N0qJEtUIB1daOzzQEwQ0cJ4c+DaXwdBiU15hTDzE=
+-----END X509 CRL-----
+";
+
+    #[test]
+    fn msp_builder_sets_all_fields() {
+        let fabric = MspConfigBuilder::new("Org1MSP")
+            .with_root_cert(TEST_CERT_1)
+            .with_intermediate_cert(TEST_CERT_2)
+            .with_tls_root_cert(TEST_CERT_2)
+            .with_tls_intermediate_cert(TEST_CERT_1)
+            .with_revocation_list(TEST_CRL)
+            .with_node_ou(MspRoleType::Peer, "peer", Some(TEST_CERT_2.into()))
+            .with_node_ou(MspRoleType::Client, "app", None)
+            .build_fabric_config()
+            .unwrap();
+
+        assert_eq!(fabric.name, "Org1MSP");
+        assert_eq!(fabric.root_certs, vec![TEST_CERT_1.as_bytes().to_vec()]);
+        assert_eq!(
+            fabric.intermediate_certs,
+            vec![TEST_CERT_2.as_bytes().to_vec()]
+        );
+        assert_eq!(fabric.tls_root_certs, vec![TEST_CERT_2.as_bytes().to_vec()]);
+        assert_eq!(
+            fabric.tls_intermediate_certs,
+            vec![TEST_CERT_1.as_bytes().to_vec()]
+        );
+        assert_eq!(fabric.revocation_list, vec![TEST_CRL.as_bytes().to_vec()]);
+        assert!(fabric.admins.is_empty());
+        assert!(fabric.signing_identity.is_none());
+        let crypto = fabric.crypto_config.unwrap();
+        assert_eq!(crypto.signature_hash_family, "SHA2");
+        assert_eq!(crypto.identity_identifier_hash_function, "SHA256");
+
+        let node_ous = fabric.fabric_node_ous.unwrap();
+        assert!(node_ous.enable);
+        // The peer OU is bound to the intermediate CA.
+        let peer = node_ous.peer_ou_identifier.unwrap();
+        assert_eq!(peer.organizational_unit_identifier, "peer");
+        assert_eq!(peer.certificate, TEST_CERT_2.as_bytes());
+        let client = node_ous.client_ou_identifier.unwrap();
+        assert_eq!(client.organizational_unit_identifier, "app");
+        assert!(client.certificate.is_empty());
+        // Roles that were not set stay unset, as with a partial config.yaml.
+        assert!(node_ous.admin_ou_identifier.is_none());
+        assert!(node_ous.orderer_ou_identifier.is_none());
+    }
+
+    #[test]
+    fn msp_builder_without_node_ous_leaves_them_unset() {
+        let msp = MspConfigBuilder::new("Org1MSP")
+            .with_root_cert(TEST_CERT_1)
+            .build()
+            .unwrap();
+        assert_eq!(msp.r#type, 0);
+        let fabric = FabricMspConfig::decode(msp.config.as_slice()).unwrap();
+        assert!(fabric.fabric_node_ous.is_none());
+    }
+
+    #[test]
+    fn msp_builder_requires_id_and_root_cert() {
+        match MspConfigBuilder::new("")
+            .with_root_cert(TEST_CERT_1)
+            .build()
+        {
+            Err(ConfigTxError::MissingMspField("msp id")) => {}
+            other => panic!("expected MissingMspField(msp id), got {:?}", other),
+        }
+        match MspConfigBuilder::new("Org1MSP").build() {
+            Err(ConfigTxError::MissingMspField("root certificate")) => {}
+            other => panic!(
+                "expected MissingMspField(root certificate), got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn msp_builder_names_the_invalid_pem_input() {
+        let cases: [(MspConfigBuilder, &str); 4] = [
+            (
+                MspConfigBuilder::new("Org1MSP")
+                    .with_root_cert(TEST_CERT_1)
+                    .with_root_cert("not a pem"),
+                "root_certs[1]",
+            ),
+            (
+                // A private key is PEM, but not a certificate.
+                MspConfigBuilder::new("Org1MSP")
+                    .with_root_cert(TEST_CERT_1)
+                    .with_tls_root_cert(TEST_KEY_1),
+                "tls_root_certs[0]",
+            ),
+            (
+                // A certificate is not a CRL.
+                MspConfigBuilder::new("Org1MSP")
+                    .with_root_cert(TEST_CERT_1)
+                    .with_revocation_list(TEST_CERT_1),
+                "revocation_list[0]",
+            ),
+            (
+                MspConfigBuilder::new("Org1MSP")
+                    .with_root_cert(TEST_CERT_1)
+                    .with_node_ou(MspRoleType::Admin, "admin", Some(b"garbage".to_vec())),
+                "node_ous.admin",
+            ),
+        ];
+        for (builder, expected_field) in cases {
+            match builder.build() {
+                Err(ConfigTxError::InvalidPem { field, .. }) => assert_eq!(field, expected_field),
+                other => panic!("expected InvalidPem({expected_field}), got {:?}", other),
+            }
+        }
+    }
+
+    #[test]
+    fn msp_builder_rejects_member_node_ou() {
+        match MspConfigBuilder::new("Org1MSP")
+            .with_root_cert(TEST_CERT_1)
+            .with_node_ou(MspRoleType::Member, "member", None)
+            .build()
+        {
+            Err(ConfigTxError::InvalidNodeOuRole(MspRoleType::Member)) => {}
+            other => panic!("expected InvalidNodeOuRole(Member), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn msp_builder_later_node_ou_replaces_earlier() {
+        let node_ous = MspConfigBuilder::new("Org1MSP")
+            .with_root_cert(TEST_CERT_1)
+            .with_node_ous(TEST_CERT_1)
+            .with_node_ou(MspRoleType::Client, "app", None)
+            .build_fabric_config()
+            .unwrap()
+            .fabric_node_ous
+            .unwrap();
+        let client = node_ous.client_ou_identifier.unwrap();
+        assert_eq!(client.organizational_unit_identifier, "app");
+        assert!(client.certificate.is_empty());
+        assert_eq!(
+            node_ous
+                .peer_ou_identifier
+                .unwrap()
+                .organizational_unit_identifier,
+            "peer"
+        );
+    }
+
+    #[test]
+    fn msp_builder_rejects_node_ou_cert_outside_the_chain() {
+        // TEST_CERT_2 is a valid certificate, but not a CA of this MSP.
+        match MspConfigBuilder::new("Org1MSP")
+            .with_root_cert(TEST_CERT_1)
+            .with_tls_root_cert(TEST_CERT_2)
+            .with_node_ous(TEST_CERT_2)
+            .build()
+        {
+            Err(ConfigTxError::NodeOuCertNotInChain(_)) => {}
+            other => panic!("expected NodeOuCertNotInChain, got {:?}", other),
         }
     }
 
