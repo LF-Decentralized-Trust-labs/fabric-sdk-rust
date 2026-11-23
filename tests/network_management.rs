@@ -733,8 +733,8 @@ fn experiment_gateway_submit_config_update() {
 fn fabric_ca_enroll_and_reenroll() {
     runtime().block_on(async {
         use fabric_sdk::fabric_ca::{
-            EnrollmentRequest, FabricCAClientBuilder, ReenrollmentRequest,
-            RegisterIdentityRequest,
+            EnrollmentRequest, FabricCAClientBuilder, ReenrollmentRequest, RegisterIdentityRequest,
+            RevokeRequest,
         };
 
         let ca_url = env_or("FABRIC_IT_CA", "https://localhost:7054");
@@ -835,8 +835,26 @@ fn fabric_ca_enroll_and_reenroll() {
         assert_ne!(rotated.certificate_pem, enrolled.certificate_pem);
         assert_ne!(rotated.private_key_pem, enrolled.private_key_pem);
 
-        // Cleanup: remove the throwaway identity.
-        ca.remove_identity(&user).await.unwrap();
+        // Cleanup: remove the throwaway identity. Fabric CA refuses removal
+        // unless the server runs with cfg.identities.allowremove, which the
+        // test-network's CAs do not; revoke it there instead, which every CA
+        // allows and which invalidates all of its certificates.
+        match ca.remove_identity(&user).await {
+            Ok(_) => println!("removed {user}"),
+            Err(err) if err.to_string().contains("Identity removal is disabled") => {
+                ca.revoke(RevokeRequest {
+                    enrollment_id: Some(user.clone()),
+                    serial: None,
+                    aki: None,
+                    reason: None,
+                    gen_crl: false,
+                })
+                .await
+                .unwrap();
+                println!("identity removal disabled on the CA; revoked {user} instead");
+            }
+            Err(err) => panic!("cleanup of {user} failed: {err}"),
+        }
         println!("enroll + reenroll OK for {user}");
     });
 }
