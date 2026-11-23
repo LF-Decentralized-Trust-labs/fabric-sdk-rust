@@ -756,9 +756,8 @@ oVrYCtFE61mTSrjr8Bs3WyglOTxz3K5jlyukIsCmPqmvpAt9EwmBpCOE\n\
 
         // The selector must be forwarded verbatim in a GET_QUERY_RESULT message.
         let sent = outbound_rx
-            .try_next()
-            .expect("no message was sent")
-            .expect("outbound channel closed");
+            .try_recv()
+            .expect("no message was sent");
         assert_eq!(
             sent.r#type,
             chaincode_message::Type::GetQueryResult as i32,
@@ -832,7 +831,7 @@ oVrYCtFE61mTSrjr8Bs3WyglOTxz3K5jlyukIsCmPqmvpAt9EwmBpCOE\n\
         // Outbound: the initial GET_QUERY_RESULT plus one QUERY_STATE_NEXT for
         // each additional page pulled (pages 2 and 3).
         let mut sent = Vec::new();
-        while let Ok(Some(m)) = outbound_rx.try_next() {
+        while let Ok(m) = outbound_rx.try_recv() {
             sent.push(m.r#type);
         }
         assert_eq!(
@@ -876,9 +875,8 @@ oVrYCtFE61mTSrjr8Bs3WyglOTxz3K5jlyukIsCmPqmvpAt9EwmBpCOE\n\
             .respond(chaincode_message::Type::GetState, vec![], message.clone())
             .await;
         let intermediate = outbound_rx
-            .try_next()
-            .expect("no message was sent")
-            .expect("outbound channel closed");
+            .try_recv()
+            .expect("no message was sent");
         assert!(intermediate.chaincode_event.is_none());
 
         // The Completed response must carry the stashed event.
@@ -888,9 +886,8 @@ oVrYCtFE61mTSrjr8Bs3WyglOTxz3K5jlyukIsCmPqmvpAt9EwmBpCOE\n\
             .respond(chaincode_message::Type::Completed, vec![], message.clone())
             .await;
         let completed = outbound_rx
-            .try_next()
-            .expect("no message was sent")
-            .expect("outbound channel closed");
+            .try_recv()
+            .expect("no message was sent");
         let event = completed
             .chaincode_event
             .expect("event should be attached to the Completed response");
@@ -906,9 +903,8 @@ oVrYCtFE61mTSrjr8Bs3WyglOTxz3K5jlyukIsCmPqmvpAt9EwmBpCOE\n\
             .respond(chaincode_message::Type::Completed, vec![], message)
             .await;
         let second_completed = outbound_rx
-            .try_next()
-            .expect("no message was sent")
-            .expect("outbound channel closed");
+            .try_recv()
+            .expect("no message was sent");
         assert!(second_completed.chaincode_event.is_none());
     }
 
