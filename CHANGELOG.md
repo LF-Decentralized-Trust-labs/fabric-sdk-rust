@@ -54,7 +54,10 @@
   SHA-2 is compiled once), `base64` 0.23, and the `ecdsa` 0.17.0 / `p256`
   0.14.0 releases instead of their release candidates. `reqwest` 0.13 for
   the REST clients (Fabric CA, osnadmin, operations); its TLS feature is now
-  `rustls` with the platform verifier.
+  `rustls` with the platform verifier. Without `with_tls`, these clients now
+  trust the operating system's certificate store instead of reqwest's
+  bundled Mozilla roots, so a container image needs its CA certificates
+  (e.g. the `ca-certificates` package) for publicly signed endpoints.
 - **Fixed: endorsing a malformed `SignedProposal` no longer panics.**
   `endorse` and `endorse_with_organizations` decoded the proposal with
   `expect`/`unwrap`; they now return `SubmitError::DecodeError`.
