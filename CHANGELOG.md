@@ -2,6 +2,70 @@
 
 ## Unreleased
 
+- **`configtx::check_config_update_signatures`**: tells which mod policies
+  a config update needs, whether the signatures collected so far meet them
+  and which orgs still have to sign (`PolicyCheck::orgs_to_sign`) — before
+  the update goes to the orderer. A port of the orderer's delta-set
+  authorization, `ImplicitMeta` (`ANY`/`ALL`/`MAJORITY`) and `cauthdsl`
+  n-out-of evaluation, with MSP role checks from the signers' certificates
+  (NodeOUs, admin certs). It only checks who signed: signatures,
+  certificate chains and expiry are not verified. Cross-checked against a
+  live orderer (`signature_check_agrees_with_the_orderer`): it accepts and
+  rejects the same updates.
+- **`configtx::set_batch_size`, `configtx::set_batch_timeout`,
+  `configtx::update_consenter_tls`**: edit helpers for the orderer batch
+  settings and for rotating a consenter's TLS certificates. Like
+  `add_consenter`, they take the proto types (`orderer::BatchSize`,
+  `etcdraft::Consenter`). Values the orderer would refuse are rejected with
+  `InvalidOrdererValue` (same checks as `GenesisBuilder`), certificates must
+  be PEM.
+- **`configtx::GenesisBuilder`**: builds the genesis block of an application
+  channel (no system channel; join orderers through osnadmin) from
+  `ApplicationOrg`s, `OrdererOrg`s, etcdraft consenters, batch size and
+  timeout, capabilities and optional ACLs — `configtxgen -outputBlock`
+  without the binary, WASM-safe. The config tree is byte-identical to
+  `configtxgen`'s for the test-network's `ChannelUsingRaft` profile, and the
+  block header and metadata follow Fabric's genesis factory
+  (`tests/configtx_fixtures.rs`). Inputs the orderer would refuse (channel
+  ID, batch size, durations, etcdraft ticks, consenter TLS PEMs) are
+  rejected with new `ConfigTxError` variants `InvalidChannelId`,
+  `MissingGenesisField` and `InvalidOrdererValue`. Consenters, anchor peers
+  and the batch size are passed as their proto types
+  (`etcdraft::Consenter`, `AnchorPeer`, `orderer::BatchSize`).
+- **`configtx::org_policies` and `configtx::orderer_org_policies`**: the
+  standard `Readers`/`Writers`/`Admins`(/`Endorsement`) signature policies of
+  an application or orderer organization with NodeOUs, ready for
+  `add_application_org`. Byte-identical to `configtxgen -printOrg` for the
+  test-network's `Org1MSP` and `OrdererOrg` (`tests/configtx_fixtures.rs`).
+- **`configtx::MspConfigBuilder`**: builds an org's FABRIC `MspConfig` from
+  PEM input (root, intermediate, TLS root/intermediate certificates,
+  revocation list, NodeOUs bound to a CA certificate, SHA2/SHA256 crypto
+  config) without an MSP directory. NodeOU roles are the proto's
+  `MspRoleType` (`Member` is rejected). Every input is parsed; a NodeOU
+  certificate must be one of the MSP's root or intermediate certificates.
+  Byte-identical to `configtxgen -printOrg` for the test-network orgs.
+  `ConfigTxError` gains `MissingMspField`, `InvalidPem`, `InvalidNodeOuRole`
+  and `NodeOuCertNotInChain` (the enum is not `#[non_exhaustive]`, so an
+  exhaustive `match` on it needs the new arms).
+- **`collection::role_or_policy`**: `OR('<msp>.<role>', ...)` signature
+  policy over any MSP roles; `member_or_policy` now delegates to it.
+
+- **Fixed: a peer ERROR reply no longer hangs the chaincode.** The peer
+  answers a failed ledger call (a rejected rich query or bookmark, a denied
+  private-data read, an invalid key) with `ERROR` instead of `RESPONSE`. The
+  router only logged it, so the `Context` call waited for a reply that never
+  came, and because transactions run one at a time, every later transaction
+  stalled until the process was restarted. One request with a garbage
+  pagination bookmark was enough. `ERROR` now reaches the waiting call, which
+  fails its transaction with the peer's message.
+- **Fixed: ledger calls of one transaction no longer take each other's
+  replies.** Each `Context` call now sends and receives under one lock and only
+  accepts a reply for its own transaction id, so concurrent calls (`join!`)
+  get their own answers and a stale reply is skipped.
+- **Fixed: gRPC-web calls work with tonic 0.14.6 and later.**
+  `tonic-web-wasm-client` 0.8 parsed the gRPC-web trailer frame but never
+  emitted it; tonic 0.14.6+ fails such a stream ("missing grpc-status
+  trailer"), so every browser call failed. Bumped to 0.9.2, which emits it.
 - **Fixed: a peer message over 4 MiB no longer hangs the chaincode.** The
   chaincode's stream to the peer used tonic's default 4 MiB decode limit, so a
   large answer (e.g. a `GetStateByRange` over a grown ledger) broke the stream.
@@ -25,8 +89,9 @@ are additive; no existing public API changed.
   `orderer/configuration`, `orderer/etcdraft/*`, `orderer/smartbft/configuration`,
   `peer/configuration`, `peer/query` (new modules `fabric::etcdraft` and
   `fabric::smartbft`). The map fields of `common.ConfigGroup` /
-  `common.ConfigUpdate` are generated as `BTreeMap`, making config encoding
-  deterministic (sorted keys).
+  `common.ConfigUpdate`, `common.Capabilities` and `protos.ACLs` are
+  generated as `BTreeMap`, making config encoding deterministic (sorted
+  keys).
 - **`gateway::cscc::CsccClient`** (`Client::get_cscc_client()`): JoinChain,
   JoinChainBySnapshot, GetChannels, GetConfigBlock, GetChannelConfig — WASM-capable.
 - **`gateway::qscc::QsccClient`** (`Client::get_qscc_client()`): GetChainInfo,

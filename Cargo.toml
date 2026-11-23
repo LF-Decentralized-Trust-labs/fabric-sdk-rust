@@ -1,7 +1,7 @@
 [package]
 name = "fabric-sdk"
 authors = ["Arne Fuchs <arnefuchs@pm.me>"]
-version = "0.5.11"
+version = "0.5.12"
 edition = "2024"
 build = "build.rs"
 license = "Apache-2.0"
@@ -11,7 +11,7 @@ Interact and program chaincode for the Hyperledger Fabric blockchain network
 repository="https://github.com/LF-Decentralized-Trust-labs/fabric-sdk-rust"
 keywords = ["fabric", "blockchain", "hyperledger", "smart-contract", "web3"]
 readme="README.md"
-exclude = ["tests/resources/*"]
+exclude = ["tests/resources/*", "scripts/*"]
 
 [dependencies]
 #Chaincode
@@ -24,7 +24,7 @@ ecdsa = { version = "0.17.0-rc.16", features = ["der", "pkcs8", "algorithm", "pe
 p256 = {version = "0.14.0-rc.7", optional = true}
 futures-channel = {version="0.3.31",optional = true}
 tonic = { version = "0.14.5", default-features = false, features = ["codegen"] }
-tonic-web-wasm-client = { version = "0.8.0", optional = true} #0.9.0 is using wasm-streams 0.5 which is incompatible with some wasm applications
+tonic-web-wasm-client = { version = "0.9.2", optional = true} # 0.8 never emits the grpc-web trailer frame; tonic 0.14.6+ rejects such streams
 getrandom = {version= "0.4.2", features=["wasm_js"], optional = true}
 
 tonic-prost = "0.14.2"

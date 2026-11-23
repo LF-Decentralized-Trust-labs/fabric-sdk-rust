@@ -1010,8 +1010,8 @@ pub struct Consortium {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Capabilities {
-    #[prost(map = "string, message", tag = "1")]
-    pub capabilities: ::std::collections::HashMap<
+    #[prost(btree_map = "string, message", tag = "1")]
+    pub capabilities: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
         Capability,
     >,

@@ -45,6 +45,50 @@ impl Context {
         }
     }
 
+    /// One request/reply exchange with the peer on behalf of this transaction.
+    ///
+    /// The reply queue stays locked across the send, so concurrent calls of
+    /// one transaction (`join!`) cannot take each other's replies, and a reply
+    /// left over for another transaction id is skipped. A peer `ERROR` (a
+    /// denied private-data read, an invalid key, a rejected rich query, ...)
+    /// fails this transaction with the peer's message: no `RESPONSE` will ever
+    /// follow it, so waiting would hang this and every later transaction. The
+    /// panic stays inside the contract function's task, which the handler
+    /// reports to the peer as a failed transaction.
+    async fn round_trip(
+        &self,
+        r#type: chaincode_message::Type,
+        payload: Vec<u8>,
+    ) -> ChaincodeMessage {
+        let mut replies = self.peer_response_queue.lock().await;
+        self.message_builder
+            .lock()
+            .await
+            .respond(r#type, payload, self.message.clone())
+            .await;
+        loop {
+            let reply = replies
+                .next()
+                .await
+                .expect("[Context] Failed to receive response from channel");
+            if reply.txid != self.message.txid {
+                eprintln!(
+                    "[Context] Dropping a reply for tx {} while waiting for tx {}",
+                    reply.txid, self.message.txid
+                );
+                continue;
+            }
+            if reply.r#type == i32::from(chaincode_message::Type::Error) {
+                panic!(
+                    "[Context] The peer rejected {}: {}",
+                    r#type.as_str_name(),
+                    String::from_utf8_lossy(&reply.payload)
+                );
+            }
+            return reply;
+        }
+    }
+
     //Getter
 
     pub async fn get_state(&self, key: &str) -> Vec<u8> {
@@ -76,22 +120,8 @@ impl Context {
             collection: collection.to_string(),
         }
         .encode_to_vec();
-        let message_context = self.message.clone();
-        self.message_builder
-            .lock()
+        self.round_trip(chaincode_message::Type::GetPrivateDataHash, payload)
             .await
-            .respond(
-                chaincode_message::Type::GetPrivateDataHash,
-                payload,
-                message_context,
-            )
-            .await;
-        self.peer_response_queue
-            .lock()
-            .await
-            .next()
-            .await
-            .expect("[Context] Failed to receive response from channel")
             .payload
     }
 
@@ -101,18 +131,8 @@ impl Context {
             collection: collection.to_string(),
         }
         .encode_to_vec();
-        let message_context = self.message.clone();
-        self.message_builder
-            .lock()
+        self.round_trip(chaincode_message::Type::GetState, payload)
             .await
-            .respond(chaincode_message::Type::GetState, payload, message_context)
-            .await;
-        self.peer_response_queue
-            .lock()
-            .await
-            .next()
-            .await
-            .expect("[Context] Failed to receive response from channel")
             .payload
     }
 
@@ -151,23 +171,9 @@ impl Context {
         }
         .encode_to_vec();
 
-        let message_context = self.message.clone();
-        self.message_builder
-            .lock()
-            .await
-            .respond(
-                chaincode_message::Type::GetStateByRange,
-                payload,
-                message_context,
-            )
-            .await;
         let response = self
-            .peer_response_queue
-            .lock()
-            .await
-            .next()
-            .await
-            .expect("[Context] Failed to receive response from channel");
+            .round_trip(chaincode_message::Type::GetStateByRange, payload)
+            .await;
         let query_response = QueryResponse::decode(response.payload.as_slice())
             .expect("[Context] Invalid query response");
         RangeResult::new(self.drain_query(query_response).await)
@@ -208,23 +214,9 @@ impl Context {
         }
         .encode_to_vec();
 
-        let message_context = self.message.clone();
-        self.message_builder
-            .lock()
-            .await
-            .respond(
-                chaincode_message::Type::GetQueryResult,
-                payload,
-                message_context,
-            )
-            .await;
         let response = self
-            .peer_response_queue
-            .lock()
-            .await
-            .next()
-            .await
-            .expect("[Context] Failed to receive response from channel");
+            .round_trip(chaincode_message::Type::GetQueryResult, payload)
+            .await;
         let query_response = QueryResponse::decode(response.payload.as_slice())
             .expect("[Context] Invalid query response");
         RangeResult::new(self.drain_query(query_response).await)
@@ -260,17 +252,8 @@ impl Context {
         }
         .encode_to_vec();
 
-        let message_context = self.message.clone();
-        self.message_builder
-            .lock()
+        self.paginated_response(chaincode_message::Type::GetQueryResult, payload)
             .await
-            .respond(
-                chaincode_message::Type::GetQueryResult,
-                payload,
-                message_context,
-            )
-            .await;
-        self.paginated_response().await
     }
 
     /// Executes a paginated range query against the public state. See
@@ -303,30 +286,19 @@ impl Context {
         }
         .encode_to_vec();
 
-        let message_context = self.message.clone();
-        self.message_builder
-            .lock()
+        self.paginated_response(chaincode_message::Type::GetStateByRange, payload)
             .await
-            .respond(
-                chaincode_message::Type::GetStateByRange,
-                payload,
-                message_context,
-            )
-            .await;
-        self.paginated_response().await
     }
 
-    /// Receives a [QueryResponse] from the peer and splits it into a streaming
+    /// Sends a paginated query and splits the peer's [QueryResponse] into a streaming
     /// [RangeResult] and the decoded [QueryResponseMetadata] (page bookmark).
     /// Shared by the paginated query and range variants.
-    async fn paginated_response(&self) -> (RangeResult, QueryResponseMetadata) {
-        let response = self
-            .peer_response_queue
-            .lock()
-            .await
-            .next()
-            .await
-            .expect("[Context] Failed to receive response from channel");
+    async fn paginated_response(
+        &self,
+        r#type: chaincode_message::Type,
+        payload: Vec<u8>,
+    ) -> (RangeResult, QueryResponseMetadata) {
+        let response = self.round_trip(r#type, payload).await;
         let query_response = QueryResponse::decode(response.payload.as_slice())
             .expect("[Context] Invalid query response");
         let response_metadata = QueryResponseMetadata::decode(query_response.metadata.as_slice())
@@ -353,19 +325,9 @@ impl Context {
                 id: response.id.clone(),
             }
             .encode_to_vec();
-            let message_context = self.message.clone();
-            self.message_builder
-                .lock()
-                .await
-                .respond(chaincode_message::Type::QueryStateNext, payload, message_context)
-                .await;
             let message = self
-                .peer_response_queue
-                .lock()
-                .await
-                .next()
-                .await
-                .expect("[Context] Failed to receive response from channel");
+                .round_trip(chaincode_message::Type::QueryStateNext, payload)
+                .await;
             response = QueryResponse::decode(message.payload.as_slice())
                 .expect("[Context] Invalid query response");
             all.append(&mut response.results);
@@ -402,18 +364,8 @@ impl Context {
             collection: collection.to_string(),
         }
         .encode_to_vec();
-        let message_context = self.message.clone();
-        self.message_builder
-            .lock()
-            .await
-            .respond(chaincode_message::Type::PutState, payload, message_context)
+        self.round_trip(chaincode_message::Type::PutState, payload)
             .await;
-        self.peer_response_queue
-            .lock()
-            .await
-            .next()
-            .await
-            .expect("[Context] Failed to receive response from channel");
     }
 
     pub async fn del_state(&self, key: &str) {
@@ -432,18 +384,8 @@ impl Context {
             collection: collection.to_string(),
         }
         .encode_to_vec();
-        let message_context = self.message.clone();
-        self.message_builder
-            .lock()
-            .await
-            .respond(chaincode_message::Type::DelState, payload, message_context)
+        self.round_trip(chaincode_message::Type::DelState, payload)
             .await;
-        self.peer_response_queue
-            .lock()
-            .await
-            .next()
-            .await
-            .expect("[Context] Failed to receive response from channel");
     }
 
     pub async fn get_history_for_key(&self, key: &str) -> HistoryResult {
@@ -451,19 +393,9 @@ impl Context {
             key: key.to_string(),
         }
         .encode_to_vec();
-        let message_context = self.message.clone();
-        self.message_builder
-            .lock()
-            .await
-            .respond(chaincode_message::Type::GetHistoryForKey, payload, message_context)
-            .await;
         let response = self
-            .peer_response_queue
-            .lock()
-            .await
-            .next()
-            .await
-            .expect("[Context] Failed to receive response from channel");
+            .round_trip(chaincode_message::Type::GetHistoryForKey, payload)
+            .await;
         let query_response = QueryResponse::decode(response.payload.as_slice())
             .expect("[Context] Invalid query response");
         HistoryResult::new(self.drain_query(query_response).await)
@@ -488,19 +420,9 @@ impl Context {
             collection: collection.to_string(),
         }
         .encode_to_vec();
-        let message_context = self.message.clone();
-        self.message_builder
-            .lock()
-            .await
-            .respond(chaincode_message::Type::GetStateMetadata, payload, message_context)
-            .await;
         let response = self
-            .peer_response_queue
-            .lock()
-            .await
-            .next()
-            .await
-            .expect("[Context] Failed to receive response from channel");
+            .round_trip(chaincode_message::Type::GetStateMetadata, payload)
+            .await;
         let result = StateMetadataResult::decode(response.payload.as_slice())
             .expect("[Context] Invalid state metadata result");
         result.entries
@@ -525,19 +447,9 @@ impl Context {
             collection: collection.to_string(),
         }
         .encode_to_vec();
-        let message_context = self.message.clone();
-        self.message_builder
-            .lock()
-            .await
-            .respond(chaincode_message::Type::GetStateMultiple, payload, message_context)
-            .await;
         let response = self
-            .peer_response_queue
-            .lock()
-            .await
-            .next()
-            .await
-            .expect("[Context] Failed to receive response from channel");
+            .round_trip(chaincode_message::Type::GetStateMultiple, payload)
+            .await;
         let result = GetStateMultipleResult::decode(response.payload.as_slice())
             .expect("[Context] Invalid get state multiple result");
         result.values
@@ -552,18 +464,8 @@ impl Context {
             collection: collection.to_string(),
         }
         .encode_to_vec();
-        let message_context = self.message.clone();
-        self.message_builder
-            .lock()
-            .await
-            .respond(chaincode_message::Type::PurgePrivateData, payload, message_context)
+        self.round_trip(chaincode_message::Type::PurgePrivateData, payload)
             .await;
-        self.peer_response_queue
-            .lock()
-            .await
-            .next()
-            .await
-            .expect("[Context] Failed to receive response from channel");
     }
 
     /// Deprecated alias for [purge_private_data](Self::purge_private_data).
@@ -617,18 +519,8 @@ impl Context {
             metadata: metadata.into_iter().next(),
         }
         .encode_to_vec();
-        let message_context = self.message.clone();
-        self.message_builder
-            .lock()
-            .await
-            .respond(chaincode_message::Type::PutStateMetadata, payload, message_context)
+        self.round_trip(chaincode_message::Type::PutStateMetadata, payload)
             .await;
-        self.peer_response_queue
-            .lock()
-            .await
-            .next()
-            .await
-            .expect("[Context] Failed to receive response from channel");
     }
 
     /// Attaches a chaincode event to the current transaction. Fabric allows at
@@ -1019,5 +911,126 @@ oVrYCtFE61mTSrjr8Bs3WyglOTxz3K5jlyukIsCmPqmvpAt9EwmBpCOE\n\
             .expect("outbound channel closed");
         assert!(second_completed.chaincode_event.is_none());
     }
-}
 
+    /// A [Context] for transaction `txid`, wired to an outbound channel the
+    /// test reads and a reply channel the test (as the peer) writes.
+    fn context_for(
+        txid: &str,
+    ) -> (
+        Context,
+        mpsc::Receiver<ChaincodeMessage>,
+        mpsc::Sender<ChaincodeMessage>,
+    ) {
+        let (outbound_tx, outbound_rx) = mpsc::channel::<ChaincodeMessage>(10);
+        let (peer_tx, peer_rx) = mpsc::channel::<ChaincodeMessage>(10);
+        let context = Context::new(
+            Arc::new(Mutex::new(MessageBuilder::new(
+                &test_metadata(),
+                outbound_tx,
+            ))),
+            ChaincodeMessage {
+                txid: txid.to_string(),
+                ..Default::default()
+            },
+            Arc::new(Mutex::new(peer_rx)),
+        );
+        (context, outbound_rx, peer_tx)
+    }
+
+    fn peer_reply(r#type: chaincode_message::Type, txid: &str, payload: &[u8]) -> ChaincodeMessage {
+        ChaincodeMessage {
+            r#type: r#type.into(),
+            txid: txid.to_string(),
+            payload: payload.to_vec(),
+            ..Default::default()
+        }
+    }
+
+    /// The peer answers a failed ledger call with ERROR, never with RESPONSE.
+    /// The call must fail the transaction with the peer's message; waiting
+    /// for a RESPONSE hung this and every later transaction for good.
+    #[tokio::test]
+    async fn a_peer_error_fails_the_call_instead_of_hanging() {
+        let (context, _outbound, mut peer) = context_for("tx-1");
+        peer.try_send(peer_reply(
+            chaincode_message::Type::Error,
+            "tx-1",
+            b"tx creator does not have read access permission on privatedata",
+        ))
+        .unwrap();
+
+        // Contract functions run in their own task; the handler reports a
+        // panic there as a failed transaction.
+        let call = tokio::spawn(async move { context.get_private_data("secret", "k").await });
+        let outcome = tokio::time::timeout(std::time::Duration::from_secs(5), call)
+            .await
+            .expect("the call hung on a peer ERROR");
+        let panic = outcome
+            .expect_err("a peer ERROR must fail the call")
+            .into_panic();
+        let message = panic.downcast_ref::<String>().cloned().unwrap_or_default();
+        assert!(message.contains("GET_STATE"), "{message}");
+        assert!(message.contains("does not have read access"), "{message}");
+    }
+
+    /// A reply left in the queue for another transaction (e.g. by a call
+    /// whose future was dropped) must not be taken as this call's answer.
+    #[tokio::test]
+    async fn a_reply_for_another_transaction_is_skipped() {
+        let (context, _outbound, mut peer) = context_for("tx-2");
+        peer.try_send(peer_reply(
+            chaincode_message::Type::Response,
+            "tx-1",
+            b"stale",
+        ))
+        .unwrap();
+        peer.try_send(peer_reply(
+            chaincode_message::Type::Response,
+            "tx-2",
+            b"fresh",
+        ))
+        .unwrap();
+        assert_eq!(context.get_state("k").await, b"fresh".to_vec());
+    }
+
+    /// Two ledger calls of one transaction in flight at once must each get
+    /// their own answer; swapped answers would differ between endorsers.
+    #[tokio::test]
+    async fn concurrent_calls_of_one_transaction_get_their_own_replies() {
+        let (context, mut outbound, mut peer) = context_for("tx-3");
+        // A peer that answers every GetState with the key it was asked for,
+        // and, when two requests are in flight at once, answers the later one
+        // first: nothing obliges the peer to answer in request order. Calls
+        // that shared one reply queue without holding it then swapped answers.
+        let mock_peer = tokio::spawn(async move {
+            fn answer(peer: &mut mpsc::Sender<ChaincodeMessage>, request: &ChaincodeMessage) {
+                let key = GetState::decode(request.payload.as_slice()).unwrap().key;
+                let reply = peer_reply(
+                    chaincode_message::Type::Response,
+                    &request.txid,
+                    key.as_bytes(),
+                );
+                peer.try_send(reply).unwrap();
+            }
+            let mut answered = 0;
+            while answered < 2 {
+                let first = outbound.next().await.expect("no request");
+                let wait = std::time::Duration::from_millis(200);
+                match tokio::time::timeout(wait, outbound.next()).await {
+                    Ok(Some(second)) => {
+                        answer(&mut peer, &second);
+                        answer(&mut peer, &first);
+                        answered += 2;
+                    }
+                    _ => {
+                        answer(&mut peer, &first);
+                        answered += 1;
+                    }
+                }
+            }
+        });
+        let (a, b) = tokio::join!(context.get_state("a"), context.get_state("b"));
+        assert_eq!((a, b), (b"a".to_vec(), b"b".to_vec()));
+        mock_peer.await.unwrap();
+    }
+}

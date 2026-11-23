@@ -5,7 +5,7 @@
 //! All tests are `#[ignore]` and gated on the `FABRIC_IT_BASE` environment
 //! variable, which must point to a running test-network directory (the
 //! `fabric-samples`-style layout with an `organizations/` tree). See
-//! `run_network_management_tests.sh` for a ready-to-use launcher.
+//! `scripts/run_network_management_tests.sh` for a ready-to-use launcher.
 //!
 //! Environment variables (all optional except `FABRIC_IT_BASE`):
 //! - `FABRIC_IT_BASE`      — path to the test-network directory (required)
@@ -344,7 +344,10 @@ fn unique_channel() -> String {
         s.push(char::from_digit(d, 36).unwrap());
         n /= 36;
     }
-    format!("sdk-it-{}", s.chars().rev().collect::<String>())
+    // Tests run in parallel and may start within the same second.
+    static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("sdk-it-{}-{n}", s.chars().rev().collect::<String>())
 }
 
 fn generate_genesis_block(channel: &str) -> Vec<u8> {
@@ -518,6 +521,299 @@ fn full_loop_create_channel_and_update_anchor_peers() {
     });
 }
 
+// ===== channel creation with the SDK's own genesis block =====
+
+/// The org's verifying MSP, read from its `msp/` directory the way
+/// configtxgen reads it (`cacerts/`, `tlscacerts/`, NodeOUs bound to the CA).
+fn msp_from_dir(msp_id: &str, msp_dir: &Path) -> fabric_sdk::fabric::msp::MspConfig {
+    let ca = std::fs::read(only_file(&msp_dir.join("cacerts"))).unwrap();
+    let tlsca = std::fs::read(only_file(&msp_dir.join("tlscacerts"))).unwrap();
+    configtx::MspConfigBuilder::new(msp_id)
+        .with_root_cert(ca.clone())
+        .with_tls_root_cert(tlsca)
+        .with_node_ous(ca)
+        .build()
+        .unwrap()
+}
+
+/// The test-network's `ChannelUsingRaft` profile, built with
+/// [`configtx::GenesisBuilder`] instead of configtxgen.
+fn sdk_genesis_builder(channel: &str) -> configtx::GenesisBuilder {
+    let orgs = base().join("organizations");
+    let tls_cert = std::fs::read(
+        orgs.join("ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt"),
+    )
+    .unwrap();
+    configtx::GenesisBuilder::new(channel)
+        .with_application_org(
+            configtx::ApplicationOrg::new(
+                "Org1MSP",
+                msp_from_dir(
+                    "Org1MSP",
+                    &orgs.join("peerOrganizations/org1.example.com/msp"),
+                ),
+            )
+            .with_anchor_peer(fabric_sdk::fabric::protos::AnchorPeer {
+                host: "peer0.org1.example.com".into(),
+                port: 7051,
+            }),
+        )
+        .with_application_org(configtx::ApplicationOrg::new(
+            "Org2MSP",
+            msp_from_dir(
+                "Org2MSP",
+                &orgs.join("peerOrganizations/org2.example.com/msp"),
+            ),
+        ))
+        .with_orderer_org(
+            configtx::OrdererOrg::new(
+                "OrdererMSP",
+                msp_from_dir(
+                    "OrdererMSP",
+                    &orgs.join("ordererOrganizations/example.com/msp"),
+                ),
+            )
+            .with_name("OrdererOrg")
+            .with_endpoint("orderer.example.com:7050"),
+        )
+        .with_consenter(fabric_sdk::fabric::etcdraft::Consenter {
+            host: "orderer.example.com".into(),
+            port: 7050,
+            client_tls_cert: tls_cert.clone(),
+            server_tls_cert: tls_cert,
+        })
+        .with_batch_size(fabric_sdk::fabric::orderer::BatchSize {
+            max_message_count: 10,
+            absolute_max_bytes: 99 * 1024 * 1024,
+            preferred_max_bytes: 512 * 1024,
+        })
+        .with_batch_timeout("2s")
+}
+
+#[test]
+#[ignore = "requires a running Fabric test network (set FABRIC_IT_BASE); creates a throwaway channel"]
+fn create_channel_with_sdk_genesis_block() {
+    runtime().block_on(async {
+        let channel = unique_channel();
+        println!("=== SDK genesis block on channel {channel} ===");
+
+        let builder = sdk_genesis_builder(&channel);
+        let genesis = builder.build().unwrap().encode_to_vec();
+        println!("genesis block: {} bytes", genesis.len());
+
+        // 1. The orderer accepts the block and becomes a raft consenter.
+        let osnadmin = osnadmin_client();
+        let info = osnadmin.join_channel(genesis.clone()).await.unwrap();
+        println!(
+            "osnadmin join: name={} status={} relation={}",
+            info.name, info.status, info.consensus_relation
+        );
+        assert_eq!(info.name, channel);
+        assert_eq!(info.consensus_relation, "consenter");
+        let mut status = info.status;
+        for _ in 0..30 {
+            if status == "active" {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            status = osnadmin.get_channel(&channel).await.unwrap().status;
+        }
+        assert_eq!(status, "active", "orderer never activated {channel}");
+
+        // 2. The peer joins with the same block.
+        let client = peer_client().await;
+        let cscc = client.get_cscc_client();
+        cscc.join_chain(genesis.clone()).await.unwrap();
+        let channels = cscc.get_channels().await.unwrap();
+        assert!(
+            channels.channels.iter().any(|c| c.channel_id == channel),
+            "peer does not list {channel}: {:?}",
+            channels.channels
+        );
+
+        // 3. The peer's channel config is exactly the config we built.
+        let config = cscc.get_channel_config(&channel).await.unwrap();
+        assert_eq!(config, builder.build_config().unwrap());
+
+        // 4. The orderer serves the same config in its genesis block. Deliver
+        //    answers 503 until the new raft channel has elected a leader.
+        let orderer = orderer_client().await;
+        let mut oldest = None;
+        for attempt in 0..30 {
+            match orderer.fetch_block(&channel, BlockPosition::Oldest).await {
+                Ok(block) => {
+                    oldest = Some(block);
+                    break;
+                }
+                Err(err) if err.to_string().contains("503") => {
+                    println!("attempt {attempt}: orderer not ready yet ({err}), retrying");
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                }
+                Err(err) => panic!("deliver failed: {err}"),
+            }
+        }
+        let oldest = oldest.expect("orderer never served the genesis block");
+        assert_eq!(
+            config_from_config_block(&oldest),
+            builder.build_config().unwrap()
+        );
+
+        println!("=== SDK genesis block OK on {channel} ===");
+    });
+}
+
+// ===== signature check against the orderer's own decision =====
+
+/// The admin of an org of the test network, e.g. `("org2.example.com",
+/// "Org2MSP")` or `("example.com", "OrdererMSP")` for the orderer org.
+fn admin_identity(domain: &str, msp_id: &str) -> Identity {
+    let kind = if msp_id == "OrdererMSP" {
+        "ordererOrganizations"
+    } else {
+        "peerOrganizations"
+    };
+    let msp = base().join(format!(
+        "organizations/{kind}/{domain}/users/Admin@{domain}/msp"
+    ));
+    IdentityBuilder::from_pem(std::fs::read(only_file(&msp.join("signcerts"))).unwrap())
+        .unwrap()
+        .with_msp(msp_id)
+        .unwrap()
+        .with_private_key(std::fs::read_to_string(only_file(&msp.join("keystore"))).unwrap())
+        .unwrap()
+        .build()
+        .unwrap()
+}
+
+/// Signs `update` with `signers`, checks it with
+/// `check_config_update_signatures`, broadcasts it (submitted by the first
+/// signer) and returns `(check satisfied, orderer accepted)`.
+async fn check_and_broadcast(
+    orderer: &OrdererClient,
+    current: &Config,
+    update: &fabric_sdk::fabric::common::ConfigUpdate,
+    signers: &[&Identity],
+) -> (bool, bool) {
+    let mut envelope = configtx::create_config_update_envelope(update);
+    for signer in signers {
+        configtx::add_signature(&mut envelope, signer);
+    }
+    let check =
+        configtx::check_config_update_signatures(current, update, &envelope.signatures).unwrap();
+    println!(
+        "check: satisfied={} orgs_to_sign={:?}",
+        check.is_satisfied(),
+        check.orgs_to_sign()
+    );
+
+    let tx = configtx::build_config_update_transaction(signers[0], &envelope).unwrap();
+    for attempt in 0..30 {
+        match orderer.broadcast(tx.clone()).await {
+            Ok(_) => return (check.is_satisfied(), true),
+            Err(err) if err.to_string().contains("no Raft leader") => {
+                println!("attempt {attempt}: orderer not ready yet, retrying");
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+            Err(err) => {
+                println!("orderer rejected: {err}");
+                return (check.is_satisfied(), false);
+            }
+        }
+    }
+    panic!("orderer never elected a raft leader");
+}
+
+/// Waits until the peer's ledger of `channel` reaches `height` blocks.
+async fn wait_for_height(client: &Client, channel: &str, height: u64) {
+    let qscc = client.get_qscc_client();
+    for _ in 0..30 {
+        if qscc.get_chain_info(channel).await.unwrap().height >= height {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    panic!("{channel} never reached height {height}");
+}
+
+#[test]
+#[ignore = "requires a running Fabric test network (set FABRIC_IT_BASE); creates a throwaway channel"]
+fn signature_check_agrees_with_the_orderer() {
+    runtime().block_on(async {
+        let channel = unique_channel();
+        println!("=== signature check vs orderer on channel {channel} ===");
+        let genesis = sdk_genesis_builder(&channel)
+            .build()
+            .unwrap()
+            .encode_to_vec();
+        osnadmin_client()
+            .join_channel(genesis.clone())
+            .await
+            .unwrap();
+        let client = peer_client().await;
+        let cscc = client.get_cscc_client();
+        cscc.join_chain(genesis).await.unwrap();
+        let orderer = orderer_client().await;
+
+        let org1 = org1_admin_identity();
+        let org2 = admin_identity("org2.example.com", "Org2MSP");
+        let orderer_admin = admin_identity("example.com", "OrdererMSP");
+
+        // 1. Orderer/BatchSize: mod policy /Channel/Orderer/Admins.
+        let current = cscc.get_channel_config(&channel).await.unwrap();
+        let mut updated = current.clone();
+        let batch_size = fabric_sdk::fabric::orderer::BatchSize {
+            max_message_count: 20,
+            absolute_max_bytes: 10 * 1024 * 1024,
+            preferred_max_bytes: 1024 * 1024,
+        };
+        configtx::set_batch_size(&mut updated, batch_size).unwrap();
+        let update = configtx::compute_config_update(&current, &updated, &channel).unwrap();
+
+        let (met, accepted) = check_and_broadcast(&orderer, &current, &update, &[&org1]).await;
+        assert!(!met, "an Org1 admin must not meet /Channel/Orderer/Admins");
+        assert!(!accepted, "the orderer must reject it as well");
+
+        let (met, accepted) =
+            check_and_broadcast(&orderer, &current, &update, &[&orderer_admin]).await;
+        assert!(
+            met && accepted,
+            "orderer admin: met={met} accepted={accepted}"
+        );
+        wait_for_height(&client, &channel, 2).await;
+
+        // 2. Application ACL: mod policy /Channel/Application/Admins,
+        //    MAJORITY of two orgs = both.
+        let current = cscc.get_channel_config(&channel).await.unwrap();
+        let mut updated = current.clone();
+        updated
+            .channel_group
+            .as_mut()
+            .unwrap()
+            .groups
+            .get_mut("Application")
+            .unwrap()
+            .values
+            .get_mut("Capabilities")
+            .unwrap()
+            .mod_policy = "Writers".into();
+        let update = configtx::compute_config_update(&current, &updated, &channel).unwrap();
+
+        let (met, accepted) = check_and_broadcast(&orderer, &current, &update, &[&org1]).await;
+        assert!(!met, "one of two org admins must not meet MAJORITY Admins");
+        assert!(!accepted, "the orderer must reject it as well");
+
+        let (met, accepted) =
+            check_and_broadcast(&orderer, &current, &update, &[&org1, &org2]).await;
+        assert!(
+            met && accepted,
+            "both admins: met={met} accepted={accepted}"
+        );
+        wait_for_height(&client, &channel, 3).await;
+
+        println!("=== signature check agrees with the orderer on {channel} ===");
+    });
+}
+
 /// Experiment: does the Gateway `Submit` RPC accept a CONFIG_UPDATE envelope?
 ///
 /// This is an open architecture question: if it does, WASM clients could
@@ -604,8 +900,8 @@ fn experiment_gateway_submit_config_update() {
 fn fabric_ca_enroll_and_reenroll() {
     runtime().block_on(async {
         use fabric_sdk::fabric_ca::{
-            EnrollmentRequest, FabricCAClientBuilder, ReenrollmentRequest,
-            RegisterIdentityRequest,
+            EnrollmentRequest, FabricCAClientBuilder, ReenrollmentRequest, RegisterIdentityRequest,
+            RevokeRequest,
         };
 
         let ca_url = env_or("FABRIC_IT_CA", "https://localhost:7054");
@@ -706,8 +1002,26 @@ fn fabric_ca_enroll_and_reenroll() {
         assert_ne!(rotated.certificate_pem, enrolled.certificate_pem);
         assert_ne!(rotated.private_key_pem, enrolled.private_key_pem);
 
-        // Cleanup: remove the throwaway identity.
-        ca.remove_identity(&user).await.unwrap();
+        // Cleanup: remove the throwaway identity. Fabric CA refuses removal
+        // unless the server runs with cfg.identities.allowremove, which the
+        // test-network's CAs do not; revoke it there instead, which every CA
+        // allows and which invalidates all of its certificates.
+        match ca.remove_identity(&user).await {
+            Ok(_) => println!("removed {user}"),
+            Err(err) if err.to_string().contains("Identity removal is disabled") => {
+                ca.revoke(RevokeRequest {
+                    enrollment_id: Some(user.clone()),
+                    serial: None,
+                    aki: None,
+                    reason: None,
+                    gen_crl: false,
+                })
+                .await
+                .unwrap();
+                println!("identity removal disabled on the CA; revoked {user} instead");
+            }
+            Err(err) => panic!("cleanup of {user} failed: {err}"),
+        }
         println!("enroll + reenroll OK for {user}");
     });
 }
