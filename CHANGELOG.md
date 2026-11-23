@@ -50,6 +50,11 @@
 - **`collection::role_or_policy`**: `OR('<msp>.<role>', ...)` signature
   policy over any MSP roles; `member_or_policy` now delegates to it.
 
+- **Fixed: a gateway reply without header no longer panics.**
+  `Envelope::submit` and `wait_for_commit` decoded the prepared transaction
+  the gateway returned from endorsement with `expect`, so a reply without a
+  payload header (from a faulty or malicious peer) crashed the application.
+  They now return `SubmitError::DecodeError`.
 - **Fixed: osnadmin channel names can no longer change the request path.**
   `OsnadminClient::get_channel` and `remove_channel` put the name into the
   URL as is, and the HTTP client resolves `..` and cuts at `?`/`#`, so
