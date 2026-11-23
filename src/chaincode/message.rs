@@ -63,7 +63,7 @@ impl MessageBuilder {
             .chaincode_call_builder
             .generate_chaincode_message(r#type, payload)
             .expect("Failed creating message");
-        self.tx.start_send(message).unwrap();
+        self.send_to_peer(message).await;
     }
     pub async fn respond(
         &mut self,
@@ -88,8 +88,23 @@ impl MessageBuilder {
             chaincode_event,
             channel_id: message.channel_id,
         };
-        self.tx.start_send(message).unwrap();
+        self.send_to_peer(message).await;
         self.chaincode_call_builder.with_transaction_id(None);
         self.chaincode_call_builder.with_proposal(None);
+    }
+
+    /// Queues `message` for the peer, waiting while the outgoing queue is
+    /// full (start_send failed instead, and the unwrap on it ended the
+    /// process). The router does not send on this queue, so waiting cannot
+    /// block the stream that drains it. It only fails once the stream to the
+    /// peer is gone, and then the router ends the process.
+    async fn send_to_peer(&mut self, message: ChaincodeMessage) {
+        let sent = match std::future::poll_fn(|cx| self.tx.poll_ready(cx)).await {
+            Ok(()) => self.tx.start_send(message),
+            Err(err) => Err(err),
+        };
+        if let Err(err) = sent {
+            eprintln!("[MessageBuilder] Stream to the peer is closed: {err}");
+        }
     }
 }

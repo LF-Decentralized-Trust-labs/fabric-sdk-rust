@@ -76,6 +76,11 @@
   `BuilderError::InvalidParameter` for any scheme other than `https` (native
   builds; on wasm the scheme is the gRPC-web proxy's) instead of panicking
   on an unparsable one.
+- **Fixed: a full queue to the peer no longer ends the chaincode.** Messages
+  to the peer went through `start_send(...).unwrap()` on a queue of 100. If
+  the gRPC stream drained slower than the chaincode wrote (flow control, a
+  slow peer), the unwrap panicked and ended the process. Sending now waits
+  for space.
 - **Fixed: the chaincode no longer drops transactions under load.**
   Transactions run one at a time from a queue of 100. When the peer sent
   more at once, the router could not queue them and dropped them with a log

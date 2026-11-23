@@ -937,6 +937,30 @@ oVrYCtFE61mTSrjr8Bs3WyglOTxz3K5jlyukIsCmPqmvpAt9EwmBpCOE\n\
         (context, outbound_rx, peer_tx)
     }
 
+    /// The queue to the peer holds one message per sender plus its buffer.
+    /// Sending more than that before tonic drains it must wait, not panic
+    /// (the unwrap on start_send ended the process).
+    #[tokio::test]
+    async fn a_full_queue_to_the_peer_waits_instead_of_panicking() {
+        use futures_util::StreamExt;
+
+        let (outbound_tx, mut outbound_rx) = mpsc::channel::<ChaincodeMessage>(0);
+        let mut builder = MessageBuilder::new(&test_metadata(), outbound_tx);
+        let sender = tokio::spawn(async move {
+            for _ in 0..5 {
+                builder
+                    .send(chaincode_message::Type::GetState, b"key".to_vec())
+                    .await;
+            }
+        });
+        for _ in 0..5 {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            let message = outbound_rx.next().await.expect("queue closed");
+            assert_eq!(message.r#type, i32::from(chaincode_message::Type::GetState));
+        }
+        sender.await.expect("sending to a full queue panicked");
+    }
+
     fn peer_reply(r#type: chaincode_message::Type, txid: &str, payload: &[u8]) -> ChaincodeMessage {
         ChaincodeMessage {
             r#type: r#type.into(),
