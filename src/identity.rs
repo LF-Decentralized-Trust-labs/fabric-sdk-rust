@@ -142,13 +142,56 @@ impl IdentityBuilder {
             return Err(BuilderError::MissingParameter("pkey".into()));
         }
 
-        let signing_key = ecdsa::SigningKey::from_pkcs8_pem(&self.pkey.replace("EC ", ""))
-            .expect("Invalid signing key");
+        let signing_key = parse_signing_key(&self.pkey)?;
 
         Ok(Identity {
             msp: self.msp.unwrap(),
             cert: self.cert,
             pkey: signing_key,
         })
+    }
+}
+
+/// Parses a P-256 private key from a PKCS#8 (`PRIVATE KEY`, as cryptogen and
+/// Fabric CA write it) or SEC1 (`EC PRIVATE KEY`, as `openssl ecparam`
+/// writes it) PEM block.
+fn parse_signing_key(pem: &str) -> Result<SigningKey<NistP256>, BuilderError> {
+    if let Ok(key) = SigningKey::from_pkcs8_pem(pem) {
+        return Ok(key);
+    }
+    p256::SecretKey::from_sec1_pem(pem)
+        .map(|secret| SigningKey::from(&secret))
+        .map_err(|_| {
+            BuilderError::InvalidParameter(
+                "private key is not a P-256 key in PKCS#8 or SEC1 PEM format".into(),
+            )
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const KEY_SEC1: &str = "-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEICPUcSpHF0fpzPkHP3WutjCvFBD6MULMphtwZ9KTgg3voAoGCCqGSM49\nAwEHoUQDQgAERXIu3cJkcC+xzqtdYjU0a8cAl1Eag9RRPSaVlTYoovuIqYXc/SsG\nFmPjuxB3RtAdpqzi4Tgkp70akiFXxGy9JQ==\n-----END EC PRIVATE KEY-----\n";
+    const KEY_PKCS8: &str = "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgI9RxKkcXR+nM+Qc/\nda62MK8UEPoxQsymG3Bn0pOCDe+hRANCAARFci7dwmRwL7HOq11iNTRrxwCXURqD\n1FE9JpWVNiii+4iphdz9KwYWY+O7EHdG0B2mrOLhOCSnvRqSIVfEbL0l\n-----END PRIVATE KEY-----\n";
+
+    #[test]
+    fn pkcs8_and_sec1_keys_parse_to_the_same_key() {
+        let pkcs8 = parse_signing_key(KEY_PKCS8).unwrap();
+        let sec1 = parse_signing_key(KEY_SEC1).unwrap();
+        assert_eq!(pkcs8.verifying_key(), sec1.verifying_key());
+    }
+
+    #[test]
+    fn an_invalid_key_is_an_error_not_a_panic() {
+        for pem in [
+            "garbage",
+            "-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n",
+        ] {
+            assert!(matches!(
+                parse_signing_key(pem),
+                Err(BuilderError::InvalidParameter(_))
+            ));
+        }
     }
 }

@@ -76,6 +76,10 @@
   `BuilderError::InvalidParameter` for any scheme other than `https` (native
   builds; on wasm the scheme is the gRPC-web proxy's) instead of panicking
   on an unparsable one.
+- **Fixed: `IdentityBuilder::build` returns an error for an invalid key.**
+  It panicked instead, and a SEC1 `EC PRIVATE KEY` PEM always failed
+  because the label was rewritten to PKCS#8. SEC1 keys are now accepted
+  alongside PKCS#8; anything else is `BuilderError::InvalidParameter`.
 - **Fabric CA client refuses plaintext http to remote hosts.**
   `FabricCAClientBuilder::build` returns `BuilderError::InvalidParameter`
   for an `http://` URL whose host is not loopback: `enroll` sends the
