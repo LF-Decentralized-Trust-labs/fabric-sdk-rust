@@ -167,13 +167,31 @@ impl CollectionConfigBuilder {
 
 /// Builds an `OR('<msp>.member', ...)` signature policy over the given MSP IDs.
 pub fn member_or_policy<S: AsRef<str>>(msp_ids: &[S]) -> SignaturePolicyEnvelope {
-    let identities: Vec<MspPrincipal> = msp_ids
+    let principals: Vec<(&str, msp_role::MspRoleType)> = msp_ids
         .iter()
-        .map(|msp_id| MspPrincipal {
+        .map(|msp_id| (msp_id.as_ref(), msp_role::MspRoleType::Member))
+        .collect();
+    role_or_policy(&principals)
+}
+
+/// Builds an `OR('<msp>.<role>', ...)` signature policy over the given
+/// `(msp_id, role)` principals, e.g.
+/// `OR('Org1MSP.admin', 'Org1MSP.peer', 'Org1MSP.client')`.
+///
+/// The encoding matches Fabric's `policydsl.FromString` for the same
+/// expression: one principal per argument in the given order (duplicates are
+/// not merged), a `1`-out-of-`N` rule over `SignedBy(0..N)`, envelope
+/// version 0.
+pub fn role_or_policy<S: AsRef<str>>(
+    principals: &[(S, msp_role::MspRoleType)],
+) -> SignaturePolicyEnvelope {
+    let identities: Vec<MspPrincipal> = principals
+        .iter()
+        .map(|(msp_id, role)| MspPrincipal {
             principal_classification: msp_principal::Classification::Role.into(),
             principal: MspRole {
                 msp_identifier: msp_id.as_ref().to_string(),
-                role: msp_role::MspRoleType::Member.into(),
+                role: (*role).into(),
             }
             .encode_to_vec(),
         })
