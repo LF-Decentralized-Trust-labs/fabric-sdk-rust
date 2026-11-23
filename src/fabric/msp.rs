@@ -2,6 +2,7 @@
 /// This struct represents an Identity
 /// (with its MSP identifier) to be used
 /// to serialize it and deserialize it
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SerializedIdentity {
@@ -16,6 +17,7 @@ pub struct SerializedIdentity {
 /// to be used to serialize it and deserialize it.
 /// The IdemixMSP will first serialize an idemix identity to bytes using
 /// this proto, and then uses these bytes as id_bytes in SerializedIdentity
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SerializedIdemixIdentity {
@@ -42,6 +44,7 @@ pub struct SerializedIdemixIdentity {
 /// MSPConfig collects all the configuration information for
 /// an MSP. The Config field should be unmarshalled in a way
 /// that depends on the Type
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct MspConfig {
@@ -61,6 +64,7 @@ pub struct MspConfig {
 /// This MSP may or may not come with a signing identity. If it does,
 /// it can also issue signing identities. If it does not, it can only
 /// be used to validate and verify certificates.
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FabricMspConfig {
@@ -122,6 +126,7 @@ pub struct FabricMspConfig {
 /// FabricCryptoConfig contains configuration parameters
 /// for the cryptographic algorithms used by the MSP
 /// this configuration refers to
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FabricCryptoConfig {
@@ -138,6 +143,7 @@ pub struct FabricCryptoConfig {
 }
 /// IdemixMSPConfig collects all the configuration information for
 /// an Idemix MSP.
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct IdemixMspConfig {
@@ -158,6 +164,7 @@ pub struct IdemixMspConfig {
     pub epoch: i64,
 }
 /// IdemixMSPSIgnerConfig contains the crypto material to set up an idemix signing identity
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct IdemixMspSignerConfig {
@@ -183,6 +190,7 @@ pub struct IdemixMspSignerConfig {
 /// SigningIdentityInfo represents the configuration information
 /// related to the signing identity the peer is to use for generating
 /// endorsements
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SigningIdentityInfo {
@@ -200,6 +208,7 @@ pub struct SigningIdentityInfo {
 /// in the bccsp/keystore or key material to be imported to the
 /// bccsp key-store. In later versions it may contain also a
 /// keystore identifier
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct KeyInfo {
@@ -215,6 +224,7 @@ pub struct KeyInfo {
 }
 /// FabricOUIdentifier represents an organizational unit and
 /// its related chain of trust identifier.
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FabricOuIdentifier {
@@ -235,6 +245,7 @@ pub struct FabricOuIdentifier {
 /// FabricNodeOUs contains configuration to tell apart clients from peers from orderers
 /// based on OUs. If NodeOUs recognition is enabled then an msp identity
 /// that does not contain any of the specified OU will be considered invalid.
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FabricNodeOUs {
