@@ -647,6 +647,153 @@ fn create_channel_with_sdk_genesis_block() {
     });
 }
 
+// ===== signature check against the orderer's own decision =====
+
+/// The admin of an org of the test network, e.g. `("org2.example.com",
+/// "Org2MSP")` or `("example.com", "OrdererMSP")` for the orderer org.
+fn admin_identity(domain: &str, msp_id: &str) -> Identity {
+    let kind = if msp_id == "OrdererMSP" {
+        "ordererOrganizations"
+    } else {
+        "peerOrganizations"
+    };
+    let msp = base().join(format!(
+        "organizations/{kind}/{domain}/users/Admin@{domain}/msp"
+    ));
+    IdentityBuilder::from_pem(std::fs::read(only_file(&msp.join("signcerts"))).unwrap())
+        .unwrap()
+        .with_msp(msp_id)
+        .unwrap()
+        .with_private_key(std::fs::read_to_string(only_file(&msp.join("keystore"))).unwrap())
+        .unwrap()
+        .build()
+        .unwrap()
+}
+
+/// Signs `update` with `signers`, checks it with
+/// `check_config_update_signatures`, broadcasts it (submitted by the first
+/// signer) and returns `(check satisfied, orderer accepted)`.
+async fn check_and_broadcast(
+    orderer: &OrdererClient,
+    current: &Config,
+    update: &fabric_sdk::fabric::common::ConfigUpdate,
+    signers: &[&Identity],
+) -> (bool, bool) {
+    let mut envelope = configtx::create_config_update_envelope(update);
+    for signer in signers {
+        configtx::add_signature(&mut envelope, signer);
+    }
+    let check =
+        configtx::check_config_update_signatures(current, update, &envelope.signatures).unwrap();
+    println!(
+        "check: satisfied={} orgs_to_sign={:?}",
+        check.is_satisfied(),
+        check.orgs_to_sign()
+    );
+
+    let tx = configtx::build_config_update_transaction(signers[0], &envelope).unwrap();
+    for attempt in 0..30 {
+        match orderer.broadcast(tx.clone()).await {
+            Ok(_) => return (check.is_satisfied(), true),
+            Err(err) if err.to_string().contains("no Raft leader") => {
+                println!("attempt {attempt}: orderer not ready yet, retrying");
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+            Err(err) => {
+                println!("orderer rejected: {err}");
+                return (check.is_satisfied(), false);
+            }
+        }
+    }
+    panic!("orderer never elected a raft leader");
+}
+
+/// Waits until the peer's ledger of `channel` reaches `height` blocks.
+async fn wait_for_height(client: &Client, channel: &str, height: u64) {
+    let qscc = client.get_qscc_client();
+    for _ in 0..30 {
+        if qscc.get_chain_info(channel).await.unwrap().height >= height {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    panic!("{channel} never reached height {height}");
+}
+
+#[test]
+#[ignore = "requires a running Fabric test network (set FABRIC_IT_BASE); creates a throwaway channel"]
+fn signature_check_agrees_with_the_orderer() {
+    runtime().block_on(async {
+        let channel = unique_channel();
+        println!("=== signature check vs orderer on channel {channel} ===");
+        let genesis = sdk_genesis_builder(&channel)
+            .build()
+            .unwrap()
+            .encode_to_vec();
+        osnadmin_client()
+            .join_channel(genesis.clone())
+            .await
+            .unwrap();
+        let client = peer_client().await;
+        let cscc = client.get_cscc_client();
+        cscc.join_chain(genesis).await.unwrap();
+        let orderer = orderer_client().await;
+
+        let org1 = org1_admin_identity();
+        let org2 = admin_identity("org2.example.com", "Org2MSP");
+        let orderer_admin = admin_identity("example.com", "OrdererMSP");
+
+        // 1. Orderer/BatchSize: mod policy /Channel/Orderer/Admins.
+        let current = cscc.get_channel_config(&channel).await.unwrap();
+        let mut updated = current.clone();
+        configtx::set_batch_size(&mut updated, 20, 10 * 1024 * 1024, 1024 * 1024).unwrap();
+        let update = configtx::compute_config_update(&current, &updated, &channel).unwrap();
+
+        let (met, accepted) = check_and_broadcast(&orderer, &current, &update, &[&org1]).await;
+        assert!(!met, "an Org1 admin must not meet /Channel/Orderer/Admins");
+        assert!(!accepted, "the orderer must reject it as well");
+
+        let (met, accepted) =
+            check_and_broadcast(&orderer, &current, &update, &[&orderer_admin]).await;
+        assert!(
+            met && accepted,
+            "orderer admin: met={met} accepted={accepted}"
+        );
+        wait_for_height(&client, &channel, 2).await;
+
+        // 2. Application ACL: mod policy /Channel/Application/Admins,
+        //    MAJORITY of two orgs = both.
+        let current = cscc.get_channel_config(&channel).await.unwrap();
+        let mut updated = current.clone();
+        updated
+            .channel_group
+            .as_mut()
+            .unwrap()
+            .groups
+            .get_mut("Application")
+            .unwrap()
+            .values
+            .get_mut("Capabilities")
+            .unwrap()
+            .mod_policy = "Writers".into();
+        let update = configtx::compute_config_update(&current, &updated, &channel).unwrap();
+
+        let (met, accepted) = check_and_broadcast(&orderer, &current, &update, &[&org1]).await;
+        assert!(!met, "one of two org admins must not meet MAJORITY Admins");
+        assert!(!accepted, "the orderer must reject it as well");
+
+        let (met, accepted) =
+            check_and_broadcast(&orderer, &current, &update, &[&org1, &org2]).await;
+        assert!(
+            met && accepted,
+            "both admins: met={met} accepted={accepted}"
+        );
+        wait_for_height(&client, &channel, 3).await;
+
+        println!("=== signature check agrees with the orderer on {channel} ===");
+    });
+}
+
 /// Experiment: does the Gateway `Submit` RPC accept a CONFIG_UPDATE envelope?
 ///
 /// This is an open architecture question: if it does, WASM clients could
