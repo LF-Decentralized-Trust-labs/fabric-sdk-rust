@@ -50,6 +50,14 @@
 - **`collection::role_or_policy`**: `OR('<msp>.<role>', ...)` signature
   policy over any MSP roles; `member_or_policy` now delegates to it.
 
+- **Fixed: osnadmin channel names can no longer change the request path.**
+  `OsnadminClient::get_channel` and `remove_channel` put the name into the
+  URL as is, and the HTTP client resolves `..` and cuts at `?`/`#`, so
+  `remove_channel("tenant-a/../victim")` removed channel `victim`. Names
+  that are not valid Fabric channel IDs are now rejected with the new
+  `OsnadminError::InvalidChannelName` before anything is sent (the enum is
+  not `#[non_exhaustive]`, so an exhaustive `match` on it needs the new
+  arm).
 - **Fixed: a TLS client no longer connects in plaintext with a non-https
   scheme.** `ClientBuilder` and `OrdererClientBuilder` require a TLS CA, but
   tonic only uses TLS for `https`: `with_scheme("http")` connected without

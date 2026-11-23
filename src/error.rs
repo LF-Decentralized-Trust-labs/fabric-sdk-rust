@@ -233,6 +233,9 @@ pub enum OsnadminError {
     ParseError(String),
     /// The orderer answered with a non-success HTTP status.
     ServerError { status: u16, message: String },
+    /// The channel name is not a valid Fabric channel ID, so it was not
+    /// sent (it would end up in the request path).
+    InvalidChannelName(String),
 }
 
 impl std::error::Error for OsnadminError {}
@@ -246,6 +249,9 @@ impl std::fmt::Display for OsnadminError {
             }
             OsnadminError::ServerError { status, message } => {
                 write!(f, "Orderer admin endpoint returned {}: {}", status, message)
+            }
+            OsnadminError::InvalidChannelName(name) => {
+                write!(f, "Invalid channel name: {:?}", name)
             }
         }
     }

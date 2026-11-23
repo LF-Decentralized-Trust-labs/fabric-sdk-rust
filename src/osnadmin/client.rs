@@ -225,7 +225,7 @@ impl OsnadminClient {
             .get(format!(
                 "{}/participation/v1/channels/{}",
                 self.base_url,
-                channel_name.as_ref()
+                checked_channel_name(channel_name.as_ref())?
             ))
             .send()
             .await
@@ -266,7 +266,7 @@ impl OsnadminClient {
             .delete(format!(
                 "{}/participation/v1/channels/{}",
                 self.base_url,
-                channel_name.as_ref()
+                checked_channel_name(channel_name.as_ref())?
             ))
             .send()
             .await
@@ -309,6 +309,34 @@ impl OsnadminClient {
         OsnadminError::ServerError {
             status: status.as_u16(),
             message,
+        }
+    }
+}
+
+/// Returns `name` if it is a valid channel ID. The name becomes a path
+/// segment, and the HTTP client resolves `..` and cuts at `?` and `#`, so a
+/// name such as `a/../b` would otherwise address channel `b`.
+fn checked_channel_name(name: &str) -> Result<&str, OsnadminError> {
+    if crate::gateway::configtx::is_valid_channel_id(name) {
+        Ok(name)
+    } else {
+        Err(OsnadminError::InvalidChannelName(name.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn channel_names_that_change_the_path_are_rejected() {
+        assert_eq!(checked_channel_name("mychannel").unwrap(), "mychannel");
+        assert_eq!(checked_channel_name("a.b-1").unwrap(), "a.b-1");
+        for name in ["", "a/../b", "..", "b?x", "b#x", "b%2F", "B", "1a", "a b"] {
+            match checked_channel_name(name) {
+                Err(OsnadminError::InvalidChannelName(n)) => assert_eq!(n, name),
+                other => panic!("expected InvalidChannelName for {name:?}, got {other:?}"),
+            }
         }
     }
 }

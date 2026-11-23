@@ -1703,12 +1703,17 @@ impl GenesisBuilder {
     }
 }
 
-fn validate_channel_id(channel_id: &str) -> Result<(), ConfigTxError> {
+/// Fabric's channel ID rule (`configtx.ValidateChannelID`): a lowercase
+/// letter, then lowercase letters, digits, `.` and `-`, at most 249 chars.
+pub(crate) fn is_valid_channel_id(channel_id: &str) -> bool {
     let mut chars = channel_id.chars();
-    let valid = channel_id.len() <= CHANNEL_ID_MAX_LENGTH
+    channel_id.len() <= CHANNEL_ID_MAX_LENGTH
         && chars.next().is_some_and(|c| c.is_ascii_lowercase())
-        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '-');
-    if valid {
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '-')
+}
+
+fn validate_channel_id(channel_id: &str) -> Result<(), ConfigTxError> {
+    if is_valid_channel_id(channel_id) {
         Ok(())
     } else {
         Err(ConfigTxError::InvalidChannelId(channel_id.to_string()))
