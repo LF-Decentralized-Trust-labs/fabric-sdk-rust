@@ -79,6 +79,11 @@
   `BuilderError::InvalidParameter` for any scheme other than `https` (native
   builds; on wasm the scheme is the gRPC-web proxy's) instead of panicking
   on an unparsable one.
+- **REST clients trust only the configured TLS CA.** `with_tls` on the
+  Fabric CA, osnadmin and operations clients added the CA to the built-in
+  public roots, so any public CA's certificate for the host name was
+  accepted as well. With `with_tls`, only the given certificates are
+  trusted now, and the PEM may be a bundle.
 - **Fixed: `IdentityBuilder::build` returns an error for an invalid key.**
   It panicked instead, and a SEC1 `EC PRIVATE KEY` PEM always failed
   because the label was rewritten to PKCS#8. SEC1 keys are now accepted

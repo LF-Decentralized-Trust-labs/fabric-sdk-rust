@@ -141,8 +141,9 @@ impl OsnadminClientBuilder {
         Ok(self)
     }
 
-    /// Sets the PEM-encoded TLS CA certificate used to verify the orderer's
-    /// TLS server certificate.
+    /// Sets the PEM-encoded TLS CA certificate (or bundle) used to verify the
+    /// orderer's TLS server certificate. Only these certificates are trusted,
+    /// not the built-in public roots.
     pub fn with_tls(mut self, tls: impl Into<Vec<u8>>) -> Self {
         self.tls = Some(tls.into());
         self
@@ -173,9 +174,11 @@ impl OsnadminClientBuilder {
         }
 
         if let Some(tls) = self.tls {
-            let cert = reqwest::Certificate::from_pem(&tls)
+            // Only the configured CA: a certificate from any public CA for
+            // this host name would be accepted too if the built-in roots stayed.
+            let certs = reqwest::Certificate::from_pem_bundle(&tls)
                 .map_err(|e| BuilderError::InvalidParameter(e.to_string()))?;
-            builder = builder.add_root_certificate(cert);
+            builder = builder.tls_certs_only(certs);
         }
 
         let http_client = builder
