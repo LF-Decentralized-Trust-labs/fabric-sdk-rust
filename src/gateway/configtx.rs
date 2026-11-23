@@ -975,9 +975,9 @@ pub fn remove_consenter(
     Ok(())
 }
 
-/// Replaces the TLS certificates (PEM) of the consenter with the given host
-/// and port, e.g. to rotate them before they expire. The orderer needs one
-/// config update per consenter whose certificates change.
+/// Replaces the TLS certificates (PEM) of the consenter with the same host
+/// and port as `consenter`, e.g. to rotate them before they expire. The
+/// orderer needs one config update per consenter whose certificates change.
 ///
 /// Returns [`ConfigTxError::InvalidPem`] for a certificate that is not a
 /// PEM certificate, [`ConfigTxError::ElementNotFound`] if no consenter with
@@ -985,24 +985,24 @@ pub fn remove_consenter(
 /// if the channel does not use etcdraft.
 pub fn update_consenter_tls(
     config: &mut Config,
-    host: &str,
-    port: u32,
-    client_tls_cert_pem: impl Into<Vec<u8>>,
-    server_tls_cert_pem: impl Into<Vec<u8>>,
+    consenter: etcdraft::Consenter,
 ) -> Result<(), ConfigTxError> {
-    let client_tls_cert = client_tls_cert_pem.into();
-    let server_tls_cert = server_tls_cert_pem.into();
-    certificate_der("client_tls_cert".into(), &client_tls_cert)?;
-    certificate_der("server_tls_cert".into(), &server_tls_cert)?;
+    certificate_der("client_tls_cert".into(), &consenter.client_tls_cert)?;
+    certificate_der("server_tls_cert".into(), &consenter.server_tls_cert)?;
 
     let (value, mut consensus_type, mut metadata) = consensus_metadata_mut(config)?;
-    let consenter = metadata
+    let existing = metadata
         .consenters
         .iter_mut()
-        .find(|c| c.host == host && c.port == port)
-        .ok_or_else(|| ConfigTxError::ElementNotFound(format!("Consenter {}:{}", host, port)))?;
-    consenter.client_tls_cert = client_tls_cert;
-    consenter.server_tls_cert = server_tls_cert;
+        .find(|c| c.host == consenter.host && c.port == consenter.port)
+        .ok_or_else(|| {
+            ConfigTxError::ElementNotFound(format!(
+                "Consenter {}:{}",
+                consenter.host, consenter.port
+            ))
+        })?;
+    existing.client_tls_cert = consenter.client_tls_cert;
+    existing.server_tls_cert = consenter.server_tls_cert;
 
     consensus_type.metadata = metadata.encode_to_vec();
     value.value = consensus_type.encode_to_vec();
@@ -1029,17 +1029,7 @@ fn orderer_value_mut<'a>(
 /// refuses (any of them 0, preferred above absolute) and
 /// [`ConfigTxError::ElementNotFound`] if the channel has no
 /// `Orderer/BatchSize` value.
-pub fn set_batch_size(
-    config: &mut Config,
-    max_message_count: u32,
-    absolute_max_bytes: u32,
-    preferred_max_bytes: u32,
-) -> Result<(), ConfigTxError> {
-    let batch_size = BatchSize {
-        max_message_count,
-        absolute_max_bytes,
-        preferred_max_bytes,
-    };
+pub fn set_batch_size(config: &mut Config, batch_size: BatchSize) -> Result<(), ConfigTxError> {
     validate_batch_size(&batch_size)?;
     orderer_value_mut(config, BATCH_SIZE_KEY)?.value = batch_size.encode_to_vec();
     Ok(())
@@ -1126,11 +1116,8 @@ impl ApplicationOrg {
 
     /// Adds an anchor peer. Without any, the group has no `AnchorPeers`
     /// value, as with `configtxgen`.
-    pub fn with_anchor_peer(mut self, host: impl Into<String>, port: i32) -> Self {
-        self.anchor_peers.push(AnchorPeer {
-            host: host.into(),
-            port,
-        });
+    pub fn with_anchor_peer(mut self, anchor_peer: AnchorPeer) -> Self {
+        self.anchor_peers.push(anchor_peer);
         self
     }
 
@@ -1239,9 +1226,17 @@ impl OrdererOrg {
 ///
 /// ```rust
 /// let block = GenesisBuilder::new("mychannel")
-///     .with_application_org(ApplicationOrg::new("Org1MSP", org1_msp).with_anchor_peer("peer0.org1", 7051))
+///     .with_application_org(ApplicationOrg::new("Org1MSP", org1_msp).with_anchor_peer(AnchorPeer {
+///         host: "peer0.org1".into(),
+///         port: 7051,
+///     }))
 ///     .with_orderer_org(OrdererOrg::new("OrdererMSP", orderer_msp).with_endpoint("orderer:7050"))
-///     .with_consenter("orderer", 7050, tls_cert_pem.clone(), tls_cert_pem)
+///     .with_consenter(etcdraft::Consenter {
+///         host: "orderer".into(),
+///         port: 7050,
+///         client_tls_cert: tls_cert_pem.clone(),
+///         server_tls_cert: tls_cert_pem,
+///     })
 ///     .build()?;
 /// osnadmin.join_channel(block.encode_to_vec()).await?;
 /// ```
@@ -1306,19 +1301,8 @@ impl GenesisBuilder {
     /// Adds an etcdraft consenter. The TLS certificates are PEM, as
     /// `configtxgen` embeds the files `ClientTLSCert`/`ServerTLSCert` point
     /// to. At least one consenter is required.
-    pub fn with_consenter(
-        mut self,
-        host: impl Into<String>,
-        port: u32,
-        client_tls_cert_pem: impl Into<Vec<u8>>,
-        server_tls_cert_pem: impl Into<Vec<u8>>,
-    ) -> Self {
-        self.consenters.push(etcdraft::Consenter {
-            host: host.into(),
-            port,
-            client_tls_cert: client_tls_cert_pem.into(),
-            server_tls_cert: server_tls_cert_pem.into(),
-        });
+    pub fn with_consenter(mut self, consenter: etcdraft::Consenter) -> Self {
+        self.consenters.push(consenter);
         self
     }
 
@@ -1330,17 +1314,8 @@ impl GenesisBuilder {
 
     /// Sets the batch size: `max_message_count` messages,
     /// `absolute_max_bytes` hard limit, `preferred_max_bytes` target.
-    pub fn with_batch_size(
-        mut self,
-        max_message_count: u32,
-        absolute_max_bytes: u32,
-        preferred_max_bytes: u32,
-    ) -> Self {
-        self.batch_size = BatchSize {
-            max_message_count,
-            absolute_max_bytes,
-            preferred_max_bytes,
-        };
+    pub fn with_batch_size(mut self, batch_size: BatchSize) -> Self {
+        self.batch_size = batch_size;
         self
     }
 
@@ -3587,11 +3562,28 @@ JN5N0qJEtUIB1daOzzQEwQ0cJ4c+DaXwdBiU15hTDzE=
             .unwrap()
     }
 
+    fn consenter(host: &str, port: u32, client: &str, server: &str) -> etcdraft::Consenter {
+        etcdraft::Consenter {
+            host: host.into(),
+            port,
+            client_tls_cert: client.into(),
+            server_tls_cert: server.into(),
+        }
+    }
+
+    fn batch_size(count: u32, absolute: u32, preferred: u32) -> BatchSize {
+        BatchSize {
+            max_message_count: count,
+            absolute_max_bytes: absolute,
+            preferred_max_bytes: preferred,
+        }
+    }
+
     fn minimal_genesis() -> GenesisBuilder {
         GenesisBuilder::new("testchannel")
             .with_application_org(ApplicationOrg::new("Org1MSP", test_msp("Org1MSP")))
             .with_orderer_org(OrdererOrg::new("OrdererMSP", test_msp("OrdererMSP")))
-            .with_consenter("orderer.example.com", 7050, TEST_CERT_1, TEST_CERT_1)
+            .with_consenter(consenter("orderer.example.com", 7050, TEST_CERT_1, TEST_CERT_1))
     }
 
     fn channel_group(builder: &GenesisBuilder) -> ConfigGroup {
@@ -3676,13 +3668,16 @@ JN5N0qJEtUIB1daOzzQEwQ0cJ4c+DaXwdBiU15hTDzE=
         let builder = GenesisBuilder::new("testchannel")
             .with_application_org(
                 ApplicationOrg::new("Org1MSP", test_msp("Org1MSP"))
-                    .with_anchor_peer("peer0.org1.example.com", 7051),
+                    .with_anchor_peer(AnchorPeer {
+                        host: "peer0.org1.example.com".into(),
+                        port: 7051,
+                    }),
             )
             .with_orderer_org(
                 OrdererOrg::new("OrdererMSP", test_msp("OrdererMSP"))
                     .with_endpoint("orderer.example.com:7050"),
             )
-            .with_consenter("orderer.example.com", 7050, TEST_CERT_1, TEST_CERT_1)
+            .with_consenter(consenter("orderer.example.com", 7050, TEST_CERT_1, TEST_CERT_1))
             .with_orderer_address("orderer.example.com:7050")
             .with_acl("qscc/GetChainInfo", "/Channel/Application/Readers")
             .with_acl("cscc/GetConfigBlock", "/Channel/Application/Readers");
@@ -3769,13 +3764,13 @@ JN5N0qJEtUIB1daOzzQEwQ0cJ4c+DaXwdBiU15hTDzE=
             (
                 GenesisBuilder::new("c")
                     .with_orderer_org(OrdererOrg::new("O", test_msp("O")))
-                    .with_consenter("o", 1, TEST_CERT_1, TEST_CERT_1),
+                    .with_consenter(consenter("o", 1, TEST_CERT_1, TEST_CERT_1)),
                 "application org",
             ),
             (
                 GenesisBuilder::new("c")
                     .with_application_org(ApplicationOrg::new("A", test_msp("A")))
-                    .with_consenter("o", 1, TEST_CERT_1, TEST_CERT_1),
+                    .with_consenter(consenter("o", 1, TEST_CERT_1, TEST_CERT_1)),
                 "orderer org",
             ),
             (
@@ -3806,8 +3801,14 @@ JN5N0qJEtUIB1daOzzQEwQ0cJ4c+DaXwdBiU15hTDzE=
 
     #[test]
     fn genesis_rejects_invalid_orderer_values() {
-        expect_orderer_value_error(minimal_genesis().with_batch_size(0, 10, 10), "batch size");
-        expect_orderer_value_error(minimal_genesis().with_batch_size(10, 10, 11), "batch size");
+        expect_orderer_value_error(
+            minimal_genesis().with_batch_size(batch_size(0, 10, 10)),
+            "batch size",
+        );
+        expect_orderer_value_error(
+            minimal_genesis().with_batch_size(batch_size(10, 10, 11)),
+            "batch size",
+        );
         expect_orderer_value_error(minimal_genesis().with_batch_timeout("2"), "batch timeout");
         expect_orderer_value_error(minimal_genesis().with_batch_timeout("-1s"), "batch timeout");
         expect_orderer_value_error(minimal_genesis().with_batch_timeout("0s"), "batch timeout");
@@ -3832,11 +3833,11 @@ JN5N0qJEtUIB1daOzzQEwQ0cJ4c+DaXwdBiU15hTDzE=
             "etcdraft tick interval",
         );
         expect_orderer_value_error(
-            minimal_genesis().with_consenter("", 7050, TEST_CERT_1, TEST_CERT_1),
+            minimal_genesis().with_consenter(consenter("", 7050, TEST_CERT_1, TEST_CERT_1)),
             "consenter",
         );
         match minimal_genesis()
-            .with_consenter("o2", 7050, TEST_CERT_1, "not a pem")
+            .with_consenter(consenter("o2", 7050, TEST_CERT_1, "not a pem"))
             .build()
         {
             Err(ConfigTxError::InvalidPem { field, .. }) => {
@@ -3854,7 +3855,7 @@ JN5N0qJEtUIB1daOzzQEwQ0cJ4c+DaXwdBiU15hTDzE=
     fn set_batch_size_changes_only_the_batch_size_value() {
         let original = minimal_genesis().build_config().unwrap();
         let mut updated = original.clone();
-        set_batch_size(&mut updated, 20, 4 * 1024 * 1024, 1024 * 1024).unwrap();
+        set_batch_size(&mut updated, batch_size(20, 4 * 1024 * 1024, 1024 * 1024)).unwrap();
 
         let update = compute_config_update(&original, &updated, "testchannel").unwrap();
         let orderer = &update.write_set.unwrap().groups["Orderer"];
@@ -3876,14 +3877,14 @@ JN5N0qJEtUIB1daOzzQEwQ0cJ4c+DaXwdBiU15hTDzE=
     fn set_batch_size_rejects_invalid_values_and_missing_value() {
         let mut config = minimal_genesis().build_config().unwrap();
         for (count, absolute, preferred) in [(0, 10, 10), (10, 0, 10), (10, 10, 0), (10, 10, 11)] {
-            match set_batch_size(&mut config, count, absolute, preferred) {
+            match set_batch_size(&mut config, batch_size(count, absolute, preferred)) {
                 Err(ConfigTxError::InvalidOrdererValue { field, .. }) => {
                     assert_eq!(field, "batch size")
                 }
                 other => panic!("expected InvalidOrdererValue, got {:?}", other),
             }
         }
-        match set_batch_size(&mut realistic_config(), 10, 10, 10) {
+        match set_batch_size(&mut realistic_config(), batch_size(10, 10, 10)) {
             Err(ConfigTxError::ElementNotFound(what)) => assert_eq!(what, "Orderer/BatchSize"),
             other => panic!("expected ElementNotFound, got {:?}", other),
         }
@@ -3916,10 +3917,7 @@ JN5N0qJEtUIB1daOzzQEwQ0cJ4c+DaXwdBiU15hTDzE=
         let mut config = minimal_genesis().build_config().unwrap();
         update_consenter_tls(
             &mut config,
-            "orderer.example.com",
-            7050,
-            TEST_CERT_2,
-            TEST_CERT_2,
+            consenter("orderer.example.com", 7050, TEST_CERT_2, TEST_CERT_2),
         )
         .unwrap();
         let orderer = &config.channel_group.as_ref().unwrap().groups["Orderer"];
@@ -3938,16 +3936,16 @@ JN5N0qJEtUIB1daOzzQEwQ0cJ4c+DaXwdBiU15hTDzE=
         // Options are kept.
         assert_eq!(metadata.options.unwrap().tick_interval, "500ms");
 
-        match update_consenter_tls(&mut config, "other", 7050, TEST_CERT_1, TEST_CERT_1) {
+        match update_consenter_tls(
+            &mut config,
+            consenter("other", 7050, TEST_CERT_1, TEST_CERT_1),
+        ) {
             Err(ConfigTxError::ElementNotFound(what)) => assert!(what.contains("other:7050")),
             other => panic!("expected ElementNotFound, got {:?}", other),
         }
         match update_consenter_tls(
             &mut config,
-            "orderer.example.com",
-            7050,
-            TEST_CERT_1,
-            "garbage",
+            consenter("orderer.example.com", 7050, TEST_CERT_1, "garbage"),
         ) {
             Err(ConfigTxError::InvalidPem { field, .. }) => assert_eq!(field, "server_tls_cert"),
             other => panic!("expected InvalidPem, got {:?}", other),

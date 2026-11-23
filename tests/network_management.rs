@@ -550,7 +550,10 @@ fn sdk_genesis_builder(channel: &str) -> configtx::GenesisBuilder {
                     &orgs.join("peerOrganizations/org1.example.com/msp"),
                 ),
             )
-            .with_anchor_peer("peer0.org1.example.com", 7051),
+            .with_anchor_peer(fabric_sdk::fabric::protos::AnchorPeer {
+                host: "peer0.org1.example.com".into(),
+                port: 7051,
+            }),
         )
         .with_application_org(configtx::ApplicationOrg::new(
             "Org2MSP",
@@ -570,8 +573,17 @@ fn sdk_genesis_builder(channel: &str) -> configtx::GenesisBuilder {
             .with_name("OrdererOrg")
             .with_endpoint("orderer.example.com:7050"),
         )
-        .with_consenter("orderer.example.com", 7050, tls_cert.clone(), tls_cert)
-        .with_batch_size(10, 99 * 1024 * 1024, 512 * 1024)
+        .with_consenter(fabric_sdk::fabric::etcdraft::Consenter {
+            host: "orderer.example.com".into(),
+            port: 7050,
+            client_tls_cert: tls_cert.clone(),
+            server_tls_cert: tls_cert,
+        })
+        .with_batch_size(fabric_sdk::fabric::orderer::BatchSize {
+            max_message_count: 10,
+            absolute_max_bytes: 99 * 1024 * 1024,
+            preferred_max_bytes: 512 * 1024,
+        })
         .with_batch_timeout("2s")
 }
 
@@ -746,7 +758,12 @@ fn signature_check_agrees_with_the_orderer() {
         // 1. Orderer/BatchSize: mod policy /Channel/Orderer/Admins.
         let current = cscc.get_channel_config(&channel).await.unwrap();
         let mut updated = current.clone();
-        configtx::set_batch_size(&mut updated, 20, 10 * 1024 * 1024, 1024 * 1024).unwrap();
+        let batch_size = fabric_sdk::fabric::orderer::BatchSize {
+            max_message_count: 20,
+            absolute_max_bytes: 10 * 1024 * 1024,
+            preferred_max_bytes: 1024 * 1024,
+        };
+        configtx::set_batch_size(&mut updated, batch_size).unwrap();
         let update = configtx::compute_config_update(&current, &updated, &channel).unwrap();
 
         let (met, accepted) = check_and_broadcast(&orderer, &current, &update, &[&org1]).await;

@@ -278,9 +278,18 @@ fn channel_using_raft() -> GenesisBuilder {
             .with_name("OrdererOrg")
             .with_endpoint("orderer.example.com:7050"),
         )
-        .with_consenter("orderer.example.com", 7050, tls.clone(), tls)
+        .with_consenter(fabric_sdk::fabric::etcdraft::Consenter {
+            host: "orderer.example.com".into(),
+            port: 7050,
+            client_tls_cert: tls.clone(),
+            server_tls_cert: tls,
+        })
         .with_orderer_address("orderer.example.com:7050")
-        .with_batch_size(10, 99 * 1024 * 1024, 512 * 1024)
+        .with_batch_size(fabric_sdk::fabric::orderer::BatchSize {
+            max_message_count: 10,
+            absolute_max_bytes: 99 * 1024 * 1024,
+            preferred_max_bytes: 512 * 1024,
+        })
         .with_batch_timeout("2s")
 }
 

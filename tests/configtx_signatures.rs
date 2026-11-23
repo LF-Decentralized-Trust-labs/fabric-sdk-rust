@@ -58,12 +58,12 @@ fn msp(org: &str) -> fabric_sdk::fabric::msp::MspConfig {
 fn channel(n: usize) -> Config {
     let mut builder = GenesisBuilder::new("policychannel")
         .with_orderer_org(OrdererOrg::new("OrdererMSP", msp("orderer")))
-        .with_consenter(
-            "orderer.example.com",
-            7050,
-            pem("orderer-orderer"),
-            pem("orderer-orderer"),
-        );
+        .with_consenter(fabric_sdk::fabric::etcdraft::Consenter {
+            host: "orderer.example.com".into(),
+            port: 7050,
+            client_tls_cert: pem("orderer-orderer"),
+            server_tls_cert: pem("orderer-orderer"),
+        });
     for org in ["org1", "org2", "org3"].into_iter().take(n) {
         builder = builder.with_application_org(ApplicationOrg::new(&msp_id(org), msp(org)));
     }
@@ -324,7 +324,12 @@ fn signer_outside_the_channel_is_ignored() {
 fn orderer_values_need_orderer_admins() {
     let current = channel(2);
     let mut updated = current.clone();
-    configtx::set_batch_size(&mut updated, 20, 10 * 1024 * 1024, 1024 * 1024).unwrap();
+    let batch_size = fabric_sdk::fabric::orderer::BatchSize {
+        max_message_count: 20,
+        absolute_max_bytes: 10 * 1024 * 1024,
+        preferred_max_bytes: 1024 * 1024,
+    };
+    configtx::set_batch_size(&mut updated, batch_size).unwrap();
     let update = configtx::compute_config_update(&current, &updated, "policychannel").unwrap();
 
     let app_admins = [signature("org1-admin"), signature("org2-admin")];

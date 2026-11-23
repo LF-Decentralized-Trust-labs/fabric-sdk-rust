@@ -14,9 +14,11 @@
   rejects the same updates.
 - **`configtx::set_batch_size`, `configtx::set_batch_timeout`,
   `configtx::update_consenter_tls`**: edit helpers for the orderer batch
-  settings and for rotating a consenter's TLS certificates. Values the
-  orderer would refuse are rejected with `InvalidOrdererValue` (same checks
-  as `GenesisBuilder`), certificates must be PEM.
+  settings and for rotating a consenter's TLS certificates. Like
+  `add_consenter`, they take the proto types (`orderer::BatchSize`,
+  `etcdraft::Consenter`). Values the orderer would refuse are rejected with
+  `InvalidOrdererValue` (same checks as `GenesisBuilder`), certificates must
+  be PEM.
 - **`configtx::GenesisBuilder`**: builds the genesis block of an application
   channel (no system channel; join orderers through osnadmin) from
   `ApplicationOrg`s, `OrdererOrg`s, etcdraft consenters, batch size and
@@ -27,7 +29,9 @@
   (`tests/configtx_fixtures.rs`). Inputs the orderer would refuse (channel
   ID, batch size, durations, etcdraft ticks, consenter TLS PEMs) are
   rejected with new `ConfigTxError` variants `InvalidChannelId`,
-  `MissingGenesisField` and `InvalidOrdererValue`.
+  `MissingGenesisField` and `InvalidOrdererValue`. Consenters, anchor peers
+  and the batch size are passed as their proto types
+  (`etcdraft::Consenter`, `AnchorPeer`, `orderer::BatchSize`).
 - **`configtx::org_policies` and `configtx::orderer_org_policies`**: the
   standard `Readers`/`Writers`/`Admins`(/`Endorsement`) signature policies of
   an application or orderer organization with NodeOUs, ready for
