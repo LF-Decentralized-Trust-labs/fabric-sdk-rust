@@ -13,10 +13,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .enum_attribute(".", "#[derive(serde::Serialize,serde::Deserialize)]")
         // Use BTreeMap for the channel-config map fields so encoding a Config /
         // ConfigUpdate is deterministic (sorted keys). Signing and comparing
-        // config updates relies on stable bytes for identical inputs.
+        // config updates relies on stable bytes for identical inputs. The
+        // Capabilities and ACLs values are maps too, encoded into config
+        // values, so they need the same.
         .btree_map(".common.ConfigGroup")
         .btree_map(".common.ConfigUpdate")
         .btree_map(".common.ConfigUpdateEnvelope")
+        .btree_map(".common.Capabilities")
+        .btree_map(".protos.ACLs")
         .out_dir("src/fabric")
         .compile_well_known_types(true)
         .extern_path(".google.protobuf", "crate::fabric::google_protobuf")

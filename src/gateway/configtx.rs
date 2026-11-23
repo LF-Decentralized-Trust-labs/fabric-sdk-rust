@@ -1258,7 +1258,7 @@ pub struct GenesisBuilder {
     channel_capabilities: Vec<String>,
     orderer_capabilities: Vec<String>,
     application_capabilities: Vec<String>,
-    acls: BTreeMap<String, String>,
+    acls: BTreeMap<String, ApiResource>,
 }
 
 impl GenesisBuilder {
@@ -1397,7 +1397,12 @@ impl GenesisBuilder {
     /// Without any, the `ACLs` value is omitted and the peer's defaults
     /// apply.
     pub fn with_acl(mut self, resource: impl Into<String>, policy_ref: impl Into<String>) -> Self {
-        self.acls.insert(resource.into(), policy_ref.into());
+        self.acls.insert(
+            resource.into(),
+            ApiResource {
+                policy_ref: policy_ref.into(),
+            },
+        );
         self
     }
 
@@ -1514,9 +1519,12 @@ impl GenesisBuilder {
             mod_policy: ADMINS_POLICY.into(),
         };
         if !self.acls.is_empty() {
+            let acls = AcLs {
+                acls: self.acls.clone(),
+            };
             application
                 .values
-                .insert(ACLS_KEY.into(), admins_value(encode_acls(&self.acls)));
+                .insert(ACLS_KEY.into(), admins_value(acls.encode_to_vec()));
         }
         if !self.application_capabilities.is_empty() {
             application.values.insert(
@@ -1840,10 +1848,7 @@ fn implicit_meta_policy(rule: ImplicitMetaRule, sub_policy: &str) -> ConfigPolic
     }
 }
 
-/// Encodes `Capabilities` with its map entries in sorted order. The
-/// generated map is a `HashMap`, whose encoding order is random; a protobuf
-/// message may be split into concatenated parts, so encoding one entry at a
-/// time keeps the bytes deterministic.
+/// Encodes `Capabilities` with its map entries in sorted order.
 ///
 /// Each entry is written by hand: Go's marshaller emits the empty
 /// `Capability` value as an explicit empty field (`12 00`), prost omits it.
@@ -1867,25 +1872,6 @@ fn encode_capabilities(capabilities: &[String]) -> Vec<u8> {
         encode_varint(0, &mut buf);
     }
     buf
-}
-
-/// Encodes `ACLs` with its map entries in sorted order (see
-/// [`encode_capabilities`]).
-fn encode_acls(acls: &BTreeMap<String, String>) -> Vec<u8> {
-    acls.iter()
-        .flat_map(|(resource, policy_ref)| {
-            AcLs {
-                acls: [(
-                    resource.clone(),
-                    ApiResource {
-                        policy_ref: policy_ref.clone(),
-                    },
-                )]
-                .into(),
-            }
-            .encode_to_vec()
-        })
-        .collect()
 }
 
 // =====================================================================

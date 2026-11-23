@@ -85,8 +85,9 @@ are additive; no existing public API changed.
   `orderer/configuration`, `orderer/etcdraft/*`, `orderer/smartbft/configuration`,
   `peer/configuration`, `peer/query` (new modules `fabric::etcdraft` and
   `fabric::smartbft`). The map fields of `common.ConfigGroup` /
-  `common.ConfigUpdate` are generated as `BTreeMap`, making config encoding
-  deterministic (sorted keys).
+  `common.ConfigUpdate`, `common.Capabilities` and `protos.ACLs` are
+  generated as `BTreeMap`, making config encoding deterministic (sorted
+  keys).
 - **`gateway::cscc::CsccClient`** (`Client::get_cscc_client()`): JoinChain,
   JoinChainBySnapshot, GetChannels, GetConfigBlock, GetChannelConfig — WASM-capable.
 - **`gateway::qscc::QsccClient`** (`Client::get_qscc_client()`): GetChainInfo,

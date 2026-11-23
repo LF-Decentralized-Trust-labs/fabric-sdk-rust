@@ -2582,8 +2582,11 @@ pub struct ApiResource {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AcLs {
-    #[prost(map = "string, message", tag = "1")]
-    pub acls: ::std::collections::HashMap<::prost::alloc::string::String, ApiResource>,
+    #[prost(btree_map = "string, message", tag = "1")]
+    pub acls: ::prost::alloc::collections::BTreeMap<
+        ::prost::alloc::string::String,
+        ApiResource,
+    >,
 }
 /// ChaincodeQueryResponse returns information about each chaincode that pertains
 /// to a query in lscc.go, such as GetChaincodes (returns all chaincodes
