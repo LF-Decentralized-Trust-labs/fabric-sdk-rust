@@ -26,6 +26,10 @@
 //!    [`build_config_update_transaction`]) — produce the signed
 //!    `CONFIG_UPDATE` [`Envelope`] to submit to the orderer (see
 //!    [`OrdererClient`](crate::gateway::orderer::OrdererClient)).
+//! 6. Signature check ([`check_config_update_signatures`]) — which mod
+//!    policies an update needs, whether the collected signatures meet them
+//!    and which orgs still have to sign, evaluated like the orderer does
+//!    (who signed only; signatures are not verified).
 //!
 //! The whole module is pure computation plus local signing; it is fully
 //! WASM-safe.
@@ -52,9 +56,15 @@
 //! let mut envelope = create_config_update_envelope(&update);
 //! add_signature(&mut envelope, &org1_identity);
 //!
+//! // Who else has to sign? Org1 alone is 1 of 2 admins: not enough.
+//! let check = check_config_update_signatures(&original, &update, &envelope.signatures)?;
+//! assert_eq!(check.orgs_to_sign(), BTreeSet::from(["Org2MSP".to_string()]));
+//!
 //! // ... pass `encode_config_update_envelope(&envelope)` out-of-band to Org2 ...
 //! let mut envelope = decode_config_update_envelope(&bytes)?;
 //! add_signature(&mut envelope, &org2_identity);
+//! let update = ConfigUpdate::decode(envelope.config_update.as_slice())?;
+//! assert!(check_config_update_signatures(&original, &update, &envelope.signatures)?.is_satisfied());
 //!
 //! // Finally wrap it into a signed transaction envelope and broadcast it
 //! let tx = build_config_update_transaction(&org2_identity, &envelope)?;
@@ -71,13 +81,17 @@ use crate::{
             BlockMetadataIndex, ChannelHeader, Config, ConfigEnvelope, ConfigGroup, ConfigPolicy,
             ConfigSignature, ConfigUpdate, ConfigUpdateEnvelope, ConfigValue, Envelope,
             HashingAlgorithm, Header, HeaderType, ImplicitMetaPolicy, LastConfig, Metadata,
-            OrdererAddresses, OrdererBlockMetadata, Payload, Policy, SignatureHeader,
-            implicit_meta_policy::Rule as ImplicitMetaRule, msp_role::MspRoleType,
-            policy::PolicyType,
+            MspPrincipal, MspRole, OrdererAddresses, OrdererBlockMetadata, OrganizationUnit,
+            Payload, Policy, SignatureHeader, SignaturePolicy, SignaturePolicyEnvelope,
+            implicit_meta_policy::Rule as ImplicitMetaRule, msp_principal, msp_role::MspRoleType,
+            policy::PolicyType, signature_policy,
         },
         etcdraft,
         google_protobuf::Timestamp,
-        msp::{FabricCryptoConfig, FabricMspConfig, FabricNodeOUs, FabricOuIdentifier, MspConfig},
+        msp::{
+            FabricCryptoConfig, FabricMspConfig, FabricNodeOUs, FabricOuIdentifier, MspConfig,
+            SerializedIdentity,
+        },
         orderer::{BatchSize, BatchTimeout, ChannelRestrictions, ConsensusType, consensus_type},
         protos::{AcLs, AnchorPeer, AnchorPeers, ApiResource},
     },
@@ -1872,6 +1886,615 @@ fn encode_acls(acls: &BTreeMap<String, String>) -> Vec<u8> {
             .encode_to_vec()
         })
         .collect()
+}
+
+// =====================================================================
+// Signature policy check
+//
+// Port of the authorization part of Fabric's config update validation
+// (common/configtx/update.go: computeDeltaSet, verifyDeltaSet,
+// policyForItem), of policy evaluation (common/policies implicitmeta.go,
+// common/cauthdsl cauthdsl.go) and of the MSP role check
+// (msp/mspimpl.go satisfiesPrincipalInternalV142), release-2.5,
+// Apache-2.0. Signatures are not verified.
+// =====================================================================
+
+const CHANNEL_GROUP_NAME: &str = "Channel";
+const X509_OU_OID: &str = "2.5.4.11";
+
+/// The kind of a config element.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ConfigElementKind {
+    Group,
+    Value,
+    Policy,
+}
+
+/// The result of [`check_config_update_signatures`]: one entry per element
+/// of the update whose modification needs authorization.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PolicyCheck {
+    pub elements: Vec<ElementCheck>,
+}
+
+impl PolicyCheck {
+    /// Whether every element's mod policy is met by the given signers.
+    pub fn is_satisfied(&self) -> bool {
+        self.elements.iter().all(|e| e.evaluation.satisfied)
+    }
+
+    /// MSP IDs whose signatures could still help meet the unmet mod
+    /// policies: the orgs to ask next. Empty when satisfied.
+    pub fn orgs_to_sign(&self) -> std::collections::BTreeSet<String> {
+        self.elements
+            .iter()
+            .flat_map(|e| e.evaluation.orgs_to_sign())
+            .collect()
+    }
+}
+
+/// One modified element of the update and how its mod policy evaluates.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ElementCheck {
+    pub kind: ConfigElementKind,
+    /// The element's path, e.g. `/Channel/Application/Org1MSP` (group) or
+    /// `/Channel/Application/Org1MSP/AnchorPeers` (value).
+    pub path: String,
+    /// The element's mod policy in the current config, as written there
+    /// (relative like `Admins` or absolute like `/Channel/Orderer/Admins`).
+    pub mod_policy: String,
+    pub evaluation: PolicyEvaluation,
+}
+
+/// How a policy evaluates against the signers.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PolicyEvaluation {
+    /// Absolute policy path, e.g. `/Channel/Application/Admins`.
+    pub path: String,
+    pub satisfied: bool,
+    pub detail: PolicyEvaluationDetail,
+}
+
+/// The policy type specific part of a [`PolicyEvaluation`].
+#[derive(Clone, Debug, PartialEq)]
+pub enum PolicyEvaluationDetail {
+    /// `rule` over the `sub_policy` of each sub-group: `required` of the
+    /// `sub_policies` must be met (`ANY` 1, `ALL` all, `MAJORITY`
+    /// `n / 2 + 1`, none for a group without sub-groups).
+    ImplicitMeta {
+        rule: ImplicitMetaRule,
+        sub_policy: String,
+        required: usize,
+        sub_policies: Vec<PolicyEvaluation>,
+    },
+    /// A signature policy. `msp_ids_unmet` lists the MSP IDs of the
+    /// principals no signer satisfies.
+    Signature {
+        msp_ids_unmet: std::collections::BTreeSet<String>,
+    },
+    /// The policy does not exist in the current config. Fabric rejects
+    /// the update (the policy manager returns a reject-all policy).
+    Missing,
+    /// A policy type this check does not evaluate (e.g. a custom type).
+    Unsupported(i32),
+}
+
+impl PolicyEvaluation {
+    /// MSP IDs whose signatures could still help meet this policy.
+    pub fn orgs_to_sign(&self) -> std::collections::BTreeSet<String> {
+        if self.satisfied {
+            return Default::default();
+        }
+        match &self.detail {
+            PolicyEvaluationDetail::ImplicitMeta { sub_policies, .. } => sub_policies
+                .iter()
+                .flat_map(PolicyEvaluation::orgs_to_sign)
+                .collect(),
+            PolicyEvaluationDetail::Signature { msp_ids_unmet } => msp_ids_unmet.clone(),
+            PolicyEvaluationDetail::Missing | PolicyEvaluationDetail::Unsupported(_) => {
+                Default::default()
+            }
+        }
+    }
+}
+
+/// Checks which mod policies a config update needs and whether the
+/// collected signatures meet them, as the orderer does before it accepts
+/// the update.
+///
+/// Every element of the write set whose version differs from the read set
+/// (Fabric's delta set) and that exists in `current` is checked against its
+/// **current** mod policy: relative names resolve in the element's own
+/// group (for a group) or the group holding it (for a value or policy),
+/// absolute paths from `/Channel`. Elements the update adds need no
+/// signature of their own; adding them bumps their parent group, which is
+/// checked. `ImplicitMeta` policies count the sub-groups whose sub-policy
+/// is met; signature policies are evaluated n-out-of like Fabric's
+/// `cauthdsl`, each signer used at most once.
+///
+/// Signers come from the signature headers' creators, de-duplicated per
+/// MSP ID and certificate. A signer satisfies a role principal
+/// (MSP 1.4.3 semantics, every channel with `V2_0` capabilities) when:
+/// - `MEMBER`: it names the principal's MSP and, with NodeOUs enabled,
+///   carries exactly one of the MSP's NodeOU identifiers;
+/// - `ADMIN`: its certificate is in the MSP's admin certs, or NodeOUs are
+///   enabled and it carries the admin OU;
+/// - `CLIENT`, `PEER`, `ORDERER`: NodeOUs are enabled and it carries that
+///   role's OU.
+///
+/// A NodeOU bound to a CA certificate additionally requires the signer's
+/// issuer to be that CA. `IDENTITY` principals match the exact
+/// certificate.
+///
+/// **Limits**: this only tells who signed. It verifies no cryptographic
+/// signature (the orderer does), and does not validate certificate chains,
+/// expiry or revocation; a signer is taken to belong to the MSP its
+/// serialized identity names, if that MSP is in the channel. Signers of
+/// non-FABRIC (idemix) MSPs are ignored, and `ORGANIZATION_UNIT`, combined
+/// and anonymity principals are never satisfied. The read set is not
+/// compared with `current`; a stale update still fails at the orderer.
+///
+/// Errors: [`ConfigTxError::NoChannelGroup`] without a current channel
+/// group, [`ConfigTxError::DecodeError`] for a signature header that does
+/// not decode (the orderer rejects such an envelope).
+pub fn check_config_update_signatures(
+    current: &Config,
+    update: &ConfigUpdate,
+    signatures: &[ConfigSignature],
+) -> Result<PolicyCheck, ConfigTxError> {
+    let root = current
+        .channel_group
+        .as_ref()
+        .ok_or(ConfigTxError::NoChannelGroup("current"))?;
+
+    let existing = flatten_config(Some(root));
+    let read_set = flatten_config(update.read_set.as_ref());
+    let write_set = flatten_config(update.write_set.as_ref());
+
+    let msps = channel_msps(root);
+    let signers = config_signers(signatures, &msps)?;
+    let evaluator = PolicyEvaluator {
+        root,
+        msps: &msps,
+        signers: &signers,
+    };
+
+    let mut elements = vec![];
+    for (key, written) in &write_set {
+        if read_set
+            .get(key)
+            .is_some_and(|read| read.version == written.version)
+        {
+            continue;
+        }
+        let Some(existing) = existing.get(key) else {
+            continue;
+        };
+        let policy_path = if existing.mod_policy.starts_with('/') {
+            existing.mod_policy.to_string()
+        } else {
+            format!("/{}/{}", existing.group_path.join("/"), existing.mod_policy)
+        };
+        elements.push(ElementCheck {
+            kind: key.0,
+            path: key.1.clone(),
+            mod_policy: existing.mod_policy.to_string(),
+            evaluation: evaluator.evaluate_path(&policy_path),
+        });
+    }
+
+    Ok(PolicyCheck { elements })
+}
+
+/// A config element flattened from the tree: its version, mod policy and
+/// the group its relative mod policy resolves in.
+struct FlatElement<'a> {
+    version: u64,
+    mod_policy: &'a str,
+    group_path: Vec<String>,
+}
+
+/// Flattens a config group into `(kind, path) -> element`, the root named
+/// `Channel` (Fabric's `mapConfig`).
+fn flatten_config(
+    root: Option<&ConfigGroup>,
+) -> BTreeMap<(ConfigElementKind, String), FlatElement<'_>> {
+    fn walk<'a>(
+        group: &'a ConfigGroup,
+        path: &mut Vec<String>,
+        out: &mut BTreeMap<(ConfigElementKind, String), FlatElement<'a>>,
+    ) {
+        let group_path = format!("/{}", path.join("/"));
+        out.insert(
+            (ConfigElementKind::Group, group_path.clone()),
+            FlatElement {
+                version: group.version,
+                mod_policy: &group.mod_policy,
+                group_path: path.clone(),
+            },
+        );
+        for (name, value) in &group.values {
+            out.insert(
+                (ConfigElementKind::Value, format!("{}/{}", group_path, name)),
+                FlatElement {
+                    version: value.version,
+                    mod_policy: &value.mod_policy,
+                    group_path: path.clone(),
+                },
+            );
+        }
+        for (name, policy) in &group.policies {
+            out.insert(
+                (
+                    ConfigElementKind::Policy,
+                    format!("{}/{}", group_path, name),
+                ),
+                FlatElement {
+                    version: policy.version,
+                    mod_policy: &policy.mod_policy,
+                    group_path: path.clone(),
+                },
+            );
+        }
+        for (name, child) in &group.groups {
+            path.push(name.clone());
+            walk(child, path, out);
+            path.pop();
+        }
+    }
+
+    let mut out = BTreeMap::new();
+    if let Some(root) = root {
+        walk(root, &mut vec![CHANNEL_GROUP_NAME.to_string()], &mut out);
+    }
+    out
+}
+
+/// What the role check needs from a channel MSP.
+struct ChannelMsp {
+    admins_der: Vec<Vec<u8>>,
+    /// `(role, OU identifier, issuer subject of the bound CA cert)`;
+    /// empty when NodeOUs are disabled.
+    node_ous: Vec<(MspRoleType, String, Option<x509_cert::name::Name>)>,
+    node_ous_enabled: bool,
+}
+
+/// The FABRIC MSPs of all org groups in the channel (the channel's MSP
+/// manager), by MSP ID.
+fn channel_msps(root: &ConfigGroup) -> BTreeMap<String, ChannelMsp> {
+    fn collect(group: &ConfigGroup, out: &mut BTreeMap<String, ChannelMsp>) {
+        if let Some(value) = group.values.get(MSP_KEY)
+            && let Ok(msp) = MspConfig::decode(value.value.as_slice())
+            && msp.r#type == FABRIC_MSP_TYPE
+            && let Ok(fabric) = FabricMspConfig::decode(msp.config.as_slice())
+        {
+            out.insert(fabric.name.clone(), ChannelMsp::from_fabric(&fabric));
+        }
+        for child in group.groups.values() {
+            collect(child, out);
+        }
+    }
+    let mut out = BTreeMap::new();
+    collect(root, &mut out);
+    out
+}
+
+impl ChannelMsp {
+    fn from_fabric(fabric: &FabricMspConfig) -> Self {
+        let admins_der = fabric
+            .admins
+            .iter()
+            .filter_map(|pem| Certificate::from_pem(pem).ok()?.to_der().ok())
+            .collect();
+        let mut node_ous = vec![];
+        let mut node_ous_enabled = false;
+        if let Some(n) = fabric.fabric_node_ous.as_ref().filter(|n| n.enable) {
+            node_ous_enabled = true;
+            for (role, ou) in [
+                (MspRoleType::Client, &n.client_ou_identifier),
+                (MspRoleType::Peer, &n.peer_ou_identifier),
+                (MspRoleType::Admin, &n.admin_ou_identifier),
+                (MspRoleType::Orderer, &n.orderer_ou_identifier),
+            ] {
+                if let Some(ou) = ou {
+                    let issuer = (!ou.certificate.is_empty())
+                        .then(|| Certificate::from_pem(&ou.certificate).ok())
+                        .flatten()
+                        .map(|ca| ca.tbs_certificate().subject().clone());
+                    node_ous.push((role, ou.organizational_unit_identifier.clone(), issuer));
+                }
+            }
+        }
+        ChannelMsp {
+            admins_der,
+            node_ous,
+            node_ous_enabled,
+        }
+    }
+
+    /// The NodeOU roles the signer's certificate carries (with a bound CA,
+    /// only if the signer was issued by it).
+    fn node_ou_roles(&self, signer: &Signer) -> Vec<MspRoleType> {
+        self.node_ous
+            .iter()
+            .filter(|(_, ou, issuer)| {
+                signer.ous.contains(ou) && issuer.as_ref().is_none_or(|i| *i == signer.issuer)
+            })
+            .map(|(role, _, _)| *role)
+            .collect()
+    }
+
+    /// Fabric's `Validate` as far as it does not involve the chain: with
+    /// NodeOUs, exactly one NodeOU role.
+    fn is_valid(&self, signer: &Signer) -> bool {
+        !self.node_ous_enabled || self.node_ou_roles(signer).len() == 1
+    }
+
+    fn satisfies_role(&self, signer: &Signer, role: MspRoleType) -> bool {
+        match role {
+            MspRoleType::Member => self.is_valid(signer),
+            MspRoleType::Admin => {
+                self.admins_der.contains(&signer.cert_der)
+                    || (self.node_ous_enabled
+                        && self.is_valid(signer)
+                        && self.node_ou_roles(signer).contains(&MspRoleType::Admin))
+            }
+            MspRoleType::Client | MspRoleType::Peer | MspRoleType::Orderer => {
+                self.node_ous_enabled
+                    && self.is_valid(signer)
+                    && self.node_ou_roles(signer).contains(&role)
+            }
+        }
+    }
+}
+
+/// A signer of the config update, as the role check sees it.
+struct Signer {
+    msp_id: String,
+    cert_der: Vec<u8>,
+    issuer: x509_cert::name::Name,
+    ous: Vec<String>,
+}
+
+/// The distinct signers whose MSP is in the channel (Fabric's
+/// `SignatureSetToValidIdentities`, minus the signature check).
+fn config_signers(
+    signatures: &[ConfigSignature],
+    msps: &BTreeMap<String, ChannelMsp>,
+) -> Result<Vec<Signer>, ConfigTxError> {
+    let mut signers: Vec<Signer> = vec![];
+    for signature in signatures {
+        let header = SignatureHeader::decode(signature.signature_header.as_slice())
+            .map_err(|_| ConfigTxError::DecodeError("Failed to decode SignatureHeader"))?;
+        let Ok(identity) = SerializedIdentity::decode(header.creator.as_slice()) else {
+            continue;
+        };
+        if !msps.contains_key(&identity.mspid) {
+            continue;
+        }
+        let Ok(cert) = Certificate::from_pem(&identity.id_bytes) else {
+            continue;
+        };
+        let Ok(cert_der) = cert.to_der() else {
+            continue;
+        };
+        if signers
+            .iter()
+            .any(|s| s.msp_id == identity.mspid && s.cert_der == cert_der)
+        {
+            continue;
+        }
+        let ou_oid = x509_cert::der::asn1::ObjectIdentifier::new_unwrap(X509_OU_OID);
+        let ous = cert
+            .tbs_certificate()
+            .subject()
+            .iter()
+            .filter(|atv| atv.oid == ou_oid)
+            .filter_map(|atv| String::from_utf8(atv.value.value().to_vec()).ok())
+            .collect();
+        signers.push(Signer {
+            msp_id: identity.mspid,
+            cert_der,
+            issuer: cert.tbs_certificate().issuer().clone(),
+            ous,
+        });
+    }
+    Ok(signers)
+}
+
+struct PolicyEvaluator<'a> {
+    root: &'a ConfigGroup,
+    msps: &'a BTreeMap<String, ChannelMsp>,
+    signers: &'a [Signer],
+}
+
+impl PolicyEvaluator<'_> {
+    /// Evaluates the policy at an absolute path (`/Channel/.../<name>`).
+    fn evaluate_path(&self, path: &str) -> PolicyEvaluation {
+        let missing = || PolicyEvaluation {
+            path: path.to_string(),
+            satisfied: false,
+            detail: PolicyEvaluationDetail::Missing,
+        };
+        let mut segments: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+        let Some(name) = segments.pop() else {
+            return missing();
+        };
+        if segments.first() != Some(&CHANNEL_GROUP_NAME) {
+            return missing();
+        }
+        let mut group = self.root;
+        for segment in &segments[1..] {
+            match group.groups.get(*segment) {
+                Some(child) => group = child,
+                None => return missing(),
+            }
+        }
+        self.evaluate(group, &format!("/{}", segments.join("/")), name)
+    }
+
+    fn evaluate(&self, group: &ConfigGroup, group_path: &str, name: &str) -> PolicyEvaluation {
+        let path = format!("{}/{}", group_path, name);
+        let Some(policy) = group.policies.get(name).and_then(|p| p.policy.as_ref()) else {
+            return PolicyEvaluation {
+                path,
+                satisfied: false,
+                detail: PolicyEvaluationDetail::Missing,
+            };
+        };
+
+        if policy.r#type == i32::from(PolicyType::ImplicitMeta) {
+            let Ok(meta) = ImplicitMetaPolicy::decode(policy.value.as_slice()) else {
+                return PolicyEvaluation {
+                    path,
+                    satisfied: false,
+                    detail: PolicyEvaluationDetail::Unsupported(policy.r#type),
+                };
+            };
+            let sub_policies: Vec<PolicyEvaluation> = group
+                .groups
+                .iter()
+                .map(|(child_name, child)| {
+                    self.evaluate(
+                        child,
+                        &format!("{}/{}", group_path, child_name),
+                        &meta.sub_policy,
+                    )
+                })
+                .collect();
+            // An unknown rule leaves Fabric's threshold at 0 (always met).
+            let rule = ImplicitMetaRule::try_from(meta.rule);
+            let required = match (sub_policies.len(), rule) {
+                (0, _) | (_, Err(_)) => 0,
+                (_, Ok(ImplicitMetaRule::Any)) => 1,
+                (n, Ok(ImplicitMetaRule::All)) => n,
+                (n, Ok(ImplicitMetaRule::Majority)) => n / 2 + 1,
+            };
+            let rule = rule.unwrap_or(ImplicitMetaRule::Any);
+            let met = sub_policies.iter().filter(|p| p.satisfied).count();
+            return PolicyEvaluation {
+                path,
+                satisfied: met >= required,
+                detail: PolicyEvaluationDetail::ImplicitMeta {
+                    rule,
+                    sub_policy: meta.sub_policy,
+                    required,
+                    sub_policies,
+                },
+            };
+        }
+
+        if policy.r#type == i32::from(PolicyType::Signature)
+            && let Ok(envelope) = SignaturePolicyEnvelope::decode(policy.value.as_slice())
+            && let Some(rule) = envelope.rule.as_ref()
+        {
+            let mut used = vec![false; self.signers.len()];
+            let satisfied = self.evaluate_rule(rule, &envelope.identities, &mut used);
+            let msp_ids_unmet = envelope
+                .identities
+                .iter()
+                .filter(|p| !self.signers.iter().any(|s| self.satisfies(s, p)))
+                .filter_map(principal_msp_id)
+                .collect();
+            return PolicyEvaluation {
+                path,
+                satisfied,
+                detail: PolicyEvaluationDetail::Signature { msp_ids_unmet },
+            };
+        }
+
+        PolicyEvaluation {
+            path,
+            satisfied: false,
+            detail: PolicyEvaluationDetail::Unsupported(policy.r#type),
+        }
+    }
+
+    /// `cauthdsl.compile`: an n-out-of gate tries its rules in order, each
+    /// on a copy of the used flags, and keeps the flags of rules that pass;
+    /// a signed-by takes the first unused signer satisfying the principal.
+    fn evaluate_rule(
+        &self,
+        rule: &SignaturePolicy,
+        identities: &[MspPrincipal],
+        used: &mut [bool],
+    ) -> bool {
+        match &rule.r#type {
+            Some(signature_policy::Type::NOutOf(n_out_of)) => {
+                let mut verified = 0;
+                let mut scratch = used.to_vec();
+                for sub_rule in &n_out_of.rules {
+                    scratch.copy_from_slice(used);
+                    if self.evaluate_rule(sub_rule, identities, &mut scratch) {
+                        verified += 1;
+                        used.copy_from_slice(&scratch);
+                    }
+                }
+                verified >= n_out_of.n
+            }
+            Some(signature_policy::Type::SignedBy(index)) => {
+                let Some(principal) = usize::try_from(*index).ok().and_then(|i| identities.get(i))
+                else {
+                    return false;
+                };
+                for (i, signer) in self.signers.iter().enumerate() {
+                    if !used[i] && self.satisfies(signer, principal) {
+                        used[i] = true;
+                        return true;
+                    }
+                }
+                false
+            }
+            None => false,
+        }
+    }
+
+    fn satisfies(&self, signer: &Signer, principal: &MspPrincipal) -> bool {
+        let Some(msp) = self.msps.get(&signer.msp_id) else {
+            return false;
+        };
+        match msp_principal::Classification::try_from(principal.principal_classification) {
+            Ok(msp_principal::Classification::Role) => {
+                let Ok(role) = MspRole::decode(principal.principal.as_slice()) else {
+                    return false;
+                };
+                let Ok(role_type) = MspRoleType::try_from(role.role) else {
+                    return false;
+                };
+                role.msp_identifier == signer.msp_id && msp.satisfies_role(signer, role_type)
+            }
+            Ok(msp_principal::Classification::Identity) => {
+                SerializedIdentity::decode(principal.principal.as_slice())
+                    .ok()
+                    .filter(|id| id.mspid == signer.msp_id)
+                    .and_then(|id| Certificate::from_pem(&id.id_bytes).ok()?.to_der().ok())
+                    .is_some_and(|der| der == signer.cert_der && msp.is_valid(signer))
+            }
+            _ => false,
+        }
+    }
+}
+
+/// The MSP ID a role or identity principal refers to.
+fn principal_msp_id(principal: &MspPrincipal) -> Option<String> {
+    match msp_principal::Classification::try_from(principal.principal_classification).ok()? {
+        msp_principal::Classification::Role => Some(
+            MspRole::decode(principal.principal.as_slice())
+                .ok()?
+                .msp_identifier,
+        ),
+        msp_principal::Classification::Identity => Some(
+            SerializedIdentity::decode(principal.principal.as_slice())
+                .ok()?
+                .mspid,
+        ),
+        msp_principal::Classification::OrganizationUnit => Some(
+            OrganizationUnit::decode(principal.principal.as_slice())
+                .ok()?
+                .msp_identifier,
+        ),
+        _ => None,
+    }
 }
 
 // =====================================================================

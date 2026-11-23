@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **`configtx::check_config_update_signatures`**: tells which mod policies
+  a config update needs, whether the signatures collected so far meet them
+  and which orgs still have to sign (`PolicyCheck::orgs_to_sign`) — before
+  the update goes to the orderer. A port of the orderer's delta-set
+  authorization, `ImplicitMeta` (`ANY`/`ALL`/`MAJORITY`) and `cauthdsl`
+  n-out-of evaluation, with MSP role checks from the signers' certificates
+  (NodeOUs, admin certs). It only checks who signed: signatures,
+  certificate chains and expiry are not verified. Cross-checked against a
+  live orderer (`signature_check_agrees_with_the_orderer`): it accepts and
+  rejects the same updates.
 - **`configtx::set_batch_size`, `configtx::set_batch_timeout`,
   `configtx::update_consenter_tls`**: edit helpers for the orderer batch
   settings and for rotating a consenter's TLS certificates. Values the
