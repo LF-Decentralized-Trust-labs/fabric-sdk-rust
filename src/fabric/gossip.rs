@@ -3,6 +3,7 @@
 /// GossipMessage and a signature over it.
 /// It may also contain a SecretEnvelope
 /// which is a marshalled Secret
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Envelope {
@@ -18,6 +19,7 @@ pub struct Envelope {
 /// The signature should be validated by the peer
 /// that signed the Envelope the SecretEnvelope
 /// came with
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SecretEnvelope {
@@ -29,6 +31,7 @@ pub struct SecretEnvelope {
 /// Secret is an entity that might be omitted
 /// from an Envelope when the remote peer that is receiving
 /// the Envelope shouldn't know the secret's content.
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Secret {
@@ -37,6 +40,7 @@ pub struct Secret {
 }
 /// Nested message and enum types in `Secret`.
 pub mod secret {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum Content {
@@ -45,6 +49,7 @@ pub mod secret {
     }
 }
 /// GossipMessage defines the message sent in a gossip network
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GossipMessage {
@@ -69,6 +74,7 @@ pub struct GossipMessage {
 }
 /// Nested message and enum types in `GossipMessage`.
 pub mod gossip_message {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(
         Clone,
@@ -118,6 +124,7 @@ pub mod gossip_message {
             }
         }
     }
+    #[allow(clippy::all)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Content {
@@ -184,6 +191,7 @@ pub mod gossip_message {
 }
 /// StateInfo is used for a peer to relay its state information
 /// to other peers
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StateInfo {
@@ -199,6 +207,7 @@ pub struct StateInfo {
     #[prost(message, optional, tag = "5")]
     pub properties: ::core::option::Option<Properties>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Properties {
@@ -210,6 +219,7 @@ pub struct Properties {
     pub chaincodes: ::prost::alloc::vec::Vec<Chaincode>,
 }
 /// StateInfoSnapshot is an aggregation of StateInfo messages
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StateInfoSnapshot {
@@ -218,6 +228,7 @@ pub struct StateInfoSnapshot {
 }
 /// StateInfoPullRequest is used to fetch a StateInfoSnapshot
 /// from a remote peer
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct StateInfoPullRequest {
@@ -230,6 +241,7 @@ pub struct StateInfoPullRequest {
 /// ConnEstablish is the message used for the gossip handshake
 /// Whenever a peer connects to another peer, it handshakes
 /// with it by sending this message that proves its identity
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ConnEstablish {
@@ -245,6 +257,7 @@ pub struct ConnEstablish {
 /// PeerIdentity defines the identity of the peer
 /// Used to make other peers learn of the identity
 /// of a certain peer
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PeerIdentity {
@@ -257,6 +270,7 @@ pub struct PeerIdentity {
 }
 /// DataRequest is a message used for a peer to request
 /// certain data blocks from a remote peer
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DataRequest {
@@ -269,6 +283,7 @@ pub struct DataRequest {
 }
 /// GossipHello is the message that is used for the peer to initiate
 /// a pull round with another peer
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GossipHello {
@@ -281,6 +296,7 @@ pub struct GossipHello {
 }
 /// DataUpdate is the final message in the pull phase
 /// sent from the receiver to the initiator
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DataUpdate {
@@ -293,6 +309,7 @@ pub struct DataUpdate {
 }
 /// DataDigest is the message sent from the receiver peer
 /// to the initator peer and contains the data items it has
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DataDigest {
@@ -305,6 +322,7 @@ pub struct DataDigest {
     pub msg_type: i32,
 }
 /// DataMessage is the message that contains a block
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DataMessage {
@@ -314,6 +332,7 @@ pub struct DataMessage {
 /// PrivateDataMessage message which includes private
 /// data information to distributed once transaction
 /// has been endorsed
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PrivateDataMessage {
@@ -321,6 +340,7 @@ pub struct PrivateDataMessage {
     pub payload: ::core::option::Option<PrivatePayload>,
 }
 /// Payload contains a block
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Payload {
@@ -334,6 +354,7 @@ pub struct Payload {
 /// PrivatePayload payload to encapsulate private
 /// data with collection name to enable routing
 /// based on collection partitioning
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PrivatePayload {
@@ -354,6 +375,7 @@ pub struct PrivatePayload {
 }
 /// AliveMessage is sent to inform remote peers
 /// of a peer's existence and activity
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct AliveMessage {
@@ -366,6 +388,7 @@ pub struct AliveMessage {
 }
 /// Leadership Message is sent during leader election to inform
 /// remote peers about intent of peer to proclaim itself as leader
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct LeadershipMessage {
@@ -377,6 +400,7 @@ pub struct LeadershipMessage {
     pub is_declaration: bool,
 }
 /// PeerTime defines the logical time of a peer's life
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PeerTime {
@@ -387,6 +411,7 @@ pub struct PeerTime {
 }
 /// MembershipRequest is used to ask membership information
 /// from a remote peer
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct MembershipRequest {
@@ -396,6 +421,7 @@ pub struct MembershipRequest {
     pub known: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
 }
 /// MembershipResponse is used for replying to MembershipRequests
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MembershipResponse {
@@ -406,6 +432,7 @@ pub struct MembershipResponse {
 }
 /// Member holds membership-related information
 /// about a peer
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Member {
@@ -417,11 +444,13 @@ pub struct Member {
     pub pki_id: ::prost::alloc::vec::Vec<u8>,
 }
 /// Empty is used for pinging and in tests
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Empty {}
 /// RemoteStateRequest is used to ask a set of blocks
 /// from a remote peer
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct RemoteStateRequest {
@@ -432,6 +461,7 @@ pub struct RemoteStateRequest {
 }
 /// RemoteStateResponse is used to send a set of blocks
 /// to a remote peer
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RemoteStateResponse {
@@ -440,6 +470,7 @@ pub struct RemoteStateResponse {
 }
 /// RemotePrivateDataRequest message used to request
 /// missing private rwset
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RemotePvtDataRequest {
@@ -447,6 +478,7 @@ pub struct RemotePvtDataRequest {
     pub digests: ::prost::alloc::vec::Vec<PvtDataDigest>,
 }
 /// PvtDataDigest defines a digest of private data
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PvtDataDigest {
@@ -463,12 +495,14 @@ pub struct PvtDataDigest {
 }
 /// RemotePrivateData message to response on private
 /// data replication request
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RemotePvtDataResponse {
     #[prost(message, repeated, tag = "1")]
     pub elements: ::prost::alloc::vec::Vec<PvtDataElement>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PvtDataElement {
@@ -480,6 +514,7 @@ pub struct PvtDataElement {
 }
 /// PvtPayload augments private rwset data and tx index
 /// inside the block
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PvtDataPayload {
@@ -490,6 +525,7 @@ pub struct PvtDataPayload {
     #[prost(bytes = "vec", tag = "2")]
     pub payload: ::prost::alloc::vec::Vec<u8>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Acknowledgement {
@@ -498,6 +534,7 @@ pub struct Acknowledgement {
 }
 /// Chaincode represents a Chaincode that is installed
 /// on a peer
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Chaincode {
@@ -508,6 +545,7 @@ pub struct Chaincode {
     #[prost(bytes = "vec", tag = "3")]
     pub metadata: ::prost::alloc::vec::Vec<u8>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]

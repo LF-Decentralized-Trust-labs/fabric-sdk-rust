@@ -2,6 +2,7 @@
 /// TxReadWriteSet encapsulates a read-write set for a transaction
 /// DataModel specifies the enum value of the data model
 /// ns_rwset field specifies a list of chaincode specific read-write set (one for each chaincode)
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TxReadWriteSet {
@@ -12,6 +13,7 @@ pub struct TxReadWriteSet {
 }
 /// Nested message and enum types in `TxReadWriteSet`.
 pub mod tx_read_write_set {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(
         Clone,
@@ -48,6 +50,7 @@ pub mod tx_read_write_set {
     }
 }
 /// NsReadWriteSet encapsulates the read-write set for a chaincode
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NsReadWriteSet {
@@ -60,6 +63,7 @@ pub struct NsReadWriteSet {
     pub collection_hashed_rwset: ::prost::alloc::vec::Vec<CollectionHashedReadWriteSet>,
 }
 /// CollectionHashedReadWriteSet encapsulate the hashed representation for the private read-write set for a collection
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CollectionHashedReadWriteSet {
@@ -73,6 +77,7 @@ pub struct CollectionHashedReadWriteSet {
     pub pvt_rwset_hash: ::prost::alloc::vec::Vec<u8>,
 }
 /// TxPvtReadWriteSet encapsulate the private read-write set for a transaction
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TxPvtReadWriteSet {
@@ -82,6 +87,7 @@ pub struct TxPvtReadWriteSet {
     pub ns_pvt_rwset: ::prost::alloc::vec::Vec<NsPvtReadWriteSet>,
 }
 /// NsPvtReadWriteSet encapsulates the private read-write set for a chaincode
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NsPvtReadWriteSet {
@@ -91,6 +97,7 @@ pub struct NsPvtReadWriteSet {
     pub collection_pvt_rwset: ::prost::alloc::vec::Vec<CollectionPvtReadWriteSet>,
 }
 /// CollectionPvtReadWriteSet encapsulates the private read-write set for a collection
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CollectionPvtReadWriteSet {

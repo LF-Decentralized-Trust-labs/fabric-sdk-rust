@@ -17,6 +17,7 @@
 ///      (iii)ByIdentity that denotes that MSPPrincipal is mapped to a single
 ///           identity/certificate; this would mean that the Principal bytes
 ///           message
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct MspPrincipal {
@@ -41,6 +42,7 @@ pub struct MspPrincipal {
 }
 /// Nested message and enum types in `MSPPrincipal`.
 pub mod msp_principal {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(
         Clone,
@@ -107,6 +109,7 @@ pub mod msp_principal {
 /// OrganizationUnit governs the organization of the Principal
 /// field of a policy principal when a specific organization unity members
 /// are to be defined within a policy principal.
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct OrganizationUnit {
@@ -126,6 +129,7 @@ pub struct OrganizationUnit {
 /// MSPRole governs the organization of the Principal
 /// field of an MSPPrincipal when it aims to define one of the
 /// two dedicated roles within an MSP: Admin and Members.
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct MspRole {
@@ -140,6 +144,7 @@ pub struct MspRole {
 }
 /// Nested message and enum types in `MSPRole`.
 pub mod msp_role {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(
         Clone,
@@ -193,6 +198,7 @@ pub mod msp_role {
     }
 }
 /// MSPIdentityAnonymity can be used to enforce an identity to be anonymous or nominal.
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct MspIdentityAnonymity {
@@ -201,6 +207,7 @@ pub struct MspIdentityAnonymity {
 }
 /// Nested message and enum types in `MSPIdentityAnonymity`.
 pub mod msp_identity_anonymity {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(
         Clone,
@@ -244,6 +251,7 @@ pub mod msp_identity_anonymity {
 /// CombinedPrincipal governs the organization of the Principal
 /// field of a policy principal when principal_classification has
 /// indicated that a combined form of principals is required
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CombinedPrincipal {
@@ -253,6 +261,7 @@ pub struct CombinedPrincipal {
 }
 /// Policy expresses a policy which the orderer can evaluate, because there has been some desire expressed to support
 /// multiple policy engines, this is typed as a oneof for now
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Policy {
@@ -264,6 +273,7 @@ pub struct Policy {
 }
 /// Nested message and enum types in `Policy`.
 pub mod policy {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(
         Clone,
@@ -310,6 +320,7 @@ pub mod policy {
     }
 }
 /// SignaturePolicyEnvelope wraps a SignaturePolicy and includes a version for future enhancements
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SignaturePolicyEnvelope {
@@ -326,6 +337,7 @@ pub struct SignaturePolicyEnvelope {
 /// SignedBy implies that the signature is from a valid certificate which is signed by the trusted
 /// authority specified in the bytes.  This will be the certificate itself for a self-signed certificate
 /// and will be the CA for more traditional certificates
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SignaturePolicy {
@@ -334,6 +346,7 @@ pub struct SignaturePolicy {
 }
 /// Nested message and enum types in `SignaturePolicy`.
 pub mod signature_policy {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct NOutOf {
@@ -342,6 +355,7 @@ pub mod signature_policy {
         #[prost(message, repeated, tag = "2")]
         pub rules: ::prost::alloc::vec::Vec<super::SignaturePolicy>,
     }
+    #[allow(clippy::all)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Type {
@@ -359,6 +373,7 @@ pub mod signature_policy {
 /// For example, with 4 sub-groups, and a policy name of "foo", ImplicitMetaPolicy retrieves
 /// each sub-group, retrieves policy "foo" for each subgroup, evaluates it, and, in the case of ANY
 /// 1 satisfied is sufficient, ALL would require 4 signatures, and MAJORITY would require 3 signatures.
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ImplicitMetaPolicy {
@@ -369,6 +384,7 @@ pub struct ImplicitMetaPolicy {
 }
 /// Nested message and enum types in `ImplicitMetaPolicy`.
 pub mod implicit_meta_policy {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(
         Clone,
@@ -415,6 +431,7 @@ pub mod implicit_meta_policy {
 }
 /// ApplicationPolicy captures the diffenrent policy types that
 /// are set and evaluted at the application level.
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ApplicationPolicy {
@@ -423,6 +440,7 @@ pub struct ApplicationPolicy {
 }
 /// Nested message and enum types in `ApplicationPolicy`.
 pub mod application_policy {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Type {
@@ -439,6 +457,7 @@ pub mod application_policy {
     }
 }
 /// LastConfig is the encoded value for the Metadata message which is encoded in the LAST_CONFIGURATION block metadata index
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct LastConfig {
@@ -446,6 +465,7 @@ pub struct LastConfig {
     pub index: u64,
 }
 /// Metadata is a common structure to be used to encode block metadata
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Metadata {
@@ -454,6 +474,7 @@ pub struct Metadata {
     #[prost(message, repeated, tag = "2")]
     pub signatures: ::prost::alloc::vec::Vec<MetadataSignature>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct MetadataSignature {
@@ -468,6 +489,7 @@ pub struct MetadataSignature {
     pub identifier_header: ::prost::alloc::vec::Vec<u8>,
 }
 /// IdentifierHeader is used as an alternative to a SignatureHeader when the creator can be referenced by id
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct IdentifierHeader {
@@ -478,6 +500,7 @@ pub struct IdentifierHeader {
     #[prost(bytes = "vec", tag = "2")]
     pub nonce: ::prost::alloc::vec::Vec<u8>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Header {
@@ -487,6 +510,7 @@ pub struct Header {
     pub signature_header: ::prost::alloc::vec::Vec<u8>,
 }
 /// Header is a generic replay prevention and identity message to include in a signed payload
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ChannelHeader {
@@ -528,6 +552,7 @@ pub struct ChannelHeader {
     #[prost(bytes = "vec", tag = "8")]
     pub tls_cert_hash: ::prost::alloc::vec::Vec<u8>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SignatureHeader {
@@ -539,6 +564,7 @@ pub struct SignatureHeader {
     pub nonce: ::prost::alloc::vec::Vec<u8>,
 }
 /// Payload is the message contents (and header to allow for signing)
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Payload {
@@ -550,6 +576,7 @@ pub struct Payload {
     pub data: ::prost::alloc::vec::Vec<u8>,
 }
 /// Envelope wraps a Payload with a signature so that the message may be authenticated
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Envelope {
@@ -564,6 +591,7 @@ pub struct Envelope {
 /// Note that the BlockHeader chains to the previous BlockHeader, and the BlockData hash is embedded
 /// in the BlockHeader.  This makes it natural and obvious that the Data is included in the hash, but
 /// the Metadata is not.
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Block {
@@ -577,6 +605,7 @@ pub struct Block {
 /// BlockHeader is the element of the block which forms the block chain
 /// The block header is hashed using the configured chain hashing algorithm
 /// over the ASN.1 encoding of the BlockHeader
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BlockHeader {
@@ -590,12 +619,14 @@ pub struct BlockHeader {
     #[prost(bytes = "vec", tag = "3")]
     pub data_hash: ::prost::alloc::vec::Vec<u8>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BlockData {
     #[prost(bytes = "vec", repeated, tag = "1")]
     pub data: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BlockMetadata {
@@ -603,6 +634,7 @@ pub struct BlockMetadata {
     pub metadata: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
 }
 /// OrdererBlockMetadata defines metadata that is set by the ordering service.
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct OrdererBlockMetadata {
@@ -612,6 +644,7 @@ pub struct OrdererBlockMetadata {
     pub consenter_metadata: ::prost::alloc::vec::Vec<u8>,
 }
 /// These status codes are intended to resemble selected HTTP status codes
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -660,6 +693,7 @@ impl Status {
         }
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -712,6 +746,7 @@ impl HeaderType {
     }
 }
 /// This enum enlists indexes of the block metadata array
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -760,6 +795,7 @@ impl BlockMetadataIndex {
 }
 /// Contains information about the blockchain ledger such as height, current
 /// block hash, and previous block hash.
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BlockchainInfo {
@@ -775,6 +811,7 @@ pub struct BlockchainInfo {
     pub bootstrapping_snapshot_info: ::core::option::Option<BootstrappingSnapshotInfo>,
 }
 /// Contains information for the bootstrapping snapshot.
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BootstrappingSnapshotInfo {
@@ -802,6 +839,7 @@ pub struct BootstrappingSnapshotInfo {
 ///    1. All items in the read_set exist at the read versions
 ///    2. All items in the write_set at a different version than, or not in, the read_set have been appropriately signed according to their mod_policy
 ///    3. The new configuration satisfies the ConfigSchema
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ConfigEnvelope {
@@ -813,6 +851,7 @@ pub struct ConfigEnvelope {
     pub last_update: ::core::option::Option<Envelope>,
 }
 /// Config represents the config for a particular channel
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Config {
@@ -822,6 +861,7 @@ pub struct Config {
     #[prost(message, optional, tag = "2")]
     pub channel_group: ::core::option::Option<ConfigGroup>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ConfigUpdateEnvelope {
@@ -841,6 +881,7 @@ pub struct ConfigUpdateEnvelope {
 /// 3. The corresponding mod_policy for every remaining element in the write_set is collected.
 /// 4. Each policy is checked against the signatures from the ConfigUpdateEnvelope, any failing to verify are rejected
 /// 5. The write_set is applied to the Config and the ConfigGroupSchema verifies that the updates were legal
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ConfigUpdate {
@@ -861,6 +902,7 @@ pub struct ConfigUpdate {
     >,
 }
 /// ConfigGroup is the hierarchical data structure for holding config
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ConfigGroup {
@@ -885,6 +927,7 @@ pub struct ConfigGroup {
     pub mod_policy: ::prost::alloc::string::String,
 }
 /// ConfigValue represents an individual piece of config data
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ConfigValue {
@@ -895,6 +938,7 @@ pub struct ConfigValue {
     #[prost(string, tag = "3")]
     pub mod_policy: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ConfigPolicy {
@@ -905,6 +949,7 @@ pub struct ConfigPolicy {
     #[prost(string, tag = "3")]
     pub mod_policy: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ConfigSignature {
@@ -918,6 +963,7 @@ pub struct ConfigSignature {
 /// HashingAlgorithm is encoded into the configuration transaction as a
 /// configuration item of type Chain with a Key of "HashingAlgorithm" and a
 /// Value of HashingAlgorithm as marshaled protobuf bytes
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct HashingAlgorithm {
@@ -927,6 +973,7 @@ pub struct HashingAlgorithm {
 }
 /// BlockDataHashingStructure is encoded into the configuration transaction as a configuration item of
 /// type Chain with a Key of "BlockDataHashingStructure" and a Value of HashingAlgorithm as marshaled protobuf bytes
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BlockDataHashingStructure {
@@ -937,6 +984,7 @@ pub struct BlockDataHashingStructure {
 }
 /// OrdererAddresses is encoded into the configuration transaction as a configuration item of type Chain
 /// with a Key of "OrdererAddresses" and a Value of OrdererAddresses as marshaled protobuf bytes
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct OrdererAddresses {
@@ -944,6 +992,7 @@ pub struct OrdererAddresses {
     pub addresses: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// Consenter represents a consenting node (i.e. replica).
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Consenter {
@@ -964,6 +1013,7 @@ pub struct Consenter {
 }
 /// Orderers is encoded into the configuration transaction as a configuration item of type Chain
 /// with a Key of "Orderers" and a Value of Orderers as marshaled protobuf bytes
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Orderers {
@@ -971,6 +1021,7 @@ pub struct Orderers {
     pub consenter_mapping: ::prost::alloc::vec::Vec<Consenter>,
 }
 /// Consortium represents the consortium context in which the channel was created
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Consortium {
@@ -1007,6 +1058,7 @@ pub struct Consortium {
 /// and /Channel/Application capabilities.  It should be possible for the orderer and
 /// application networks to upgrade themselves independently (with the exception of any
 /// new capabilities defined at the /Channel level).
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Capabilities {
@@ -1020,6 +1072,7 @@ pub struct Capabilities {
 /// message rather than a constant, so that we may extend capabilities with other fields
 /// if the need arises in the future.  For the time being, a capability being in the
 /// capabilities map requires that that capability be supported.
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Capability {}

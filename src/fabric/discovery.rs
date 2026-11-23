@@ -4,6 +4,7 @@
 /// The identity that is used to verify the signature
 /// can be extracted from the authentication field of type AuthInfo
 /// in the Request itself after deserializing it.
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SignedRequest {
@@ -14,6 +15,7 @@ pub struct SignedRequest {
 }
 /// Request contains authentication info about the client that sent the request
 /// and the queries it wishes to query the service
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Request {
@@ -25,6 +27,7 @@ pub struct Request {
     #[prost(message, repeated, tag = "2")]
     pub queries: ::prost::alloc::vec::Vec<Query>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Response {
@@ -34,6 +37,7 @@ pub struct Response {
 }
 /// AuthInfo aggregates authentication information that the server uses
 /// to authenticate the client
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct AuthInfo {
@@ -53,6 +57,7 @@ pub struct AuthInfo {
     pub client_tls_cert_hash: ::prost::alloc::vec::Vec<u8>,
 }
 /// Query asks for information in the context of a specific channel
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Query {
@@ -63,6 +68,7 @@ pub struct Query {
 }
 /// Nested message and enum types in `Query`.
 pub mod query {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Query {
@@ -91,6 +97,7 @@ pub mod query {
 /// The corresponding Query can be inferred by the index of the QueryResult from
 /// its enclosing Response message.
 /// QueryResults are ordered in the same order as the Queries are ordered in their enclosing Request.
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryResult {
@@ -99,6 +106,7 @@ pub struct QueryResult {
 }
 /// Nested message and enum types in `QueryResult`.
 pub mod query_result {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Result {
@@ -120,9 +128,11 @@ pub mod query_result {
     }
 }
 /// ConfigQuery requests a ConfigResult
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ConfigQuery {}
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ConfigResult {
@@ -141,6 +151,7 @@ pub struct ConfigResult {
 /// for the peer membership to be filtered according to
 /// chaincodes that are installed on peers and collection
 /// access control policies.
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PeerMembershipQuery {
@@ -148,6 +159,7 @@ pub struct PeerMembershipQuery {
     pub filter: ::core::option::Option<super::protos::ChaincodeInterest>,
 }
 /// PeerMembershipResult contains peers mapped by their organizations (MSP_ID)
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PeerMembershipResult {
@@ -158,6 +170,7 @@ pub struct PeerMembershipResult {
 /// list of chaincode invocations.
 /// Each invocation is a separate one, and the endorsement policy
 /// is evaluated independantly for each given interest.
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ChaincodeQuery {
@@ -166,6 +179,7 @@ pub struct ChaincodeQuery {
 }
 /// ChaincodeQueryResult contains EndorsementDescriptors for
 /// chaincodes
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ChaincodeQueryResult {
@@ -173,6 +187,7 @@ pub struct ChaincodeQueryResult {
     pub content: ::prost::alloc::vec::Vec<EndorsementDescriptor>,
 }
 /// LocalPeerQuery queries for peers in a non channel context
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct LocalPeerQuery {}
@@ -188,6 +203,7 @@ pub struct LocalPeerQuery {}
 ///     3.1) Denote P_g as a set of n random peers {p0, p1, ... p_n} selected from e(g)
 ///     3.2) R = R U P_g  (add P_g to R)
 /// 4) The set of peers R is the peers the client needs to request endorsements from
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct EndorsementDescriptor {
@@ -207,6 +223,7 @@ pub struct EndorsementDescriptor {
 }
 /// Layout contains a mapping from a group name to number of peers
 /// that are needed for fulfilling an endorsement policy
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Layout {
@@ -219,6 +236,7 @@ pub struct Layout {
     >,
 }
 /// Peers contains a list of Peer(s)
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Peers {
@@ -227,6 +245,7 @@ pub struct Peers {
 }
 /// Peer contains information about the peer such as its channel specific
 /// state, and membership information.
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Peer {
@@ -241,6 +260,7 @@ pub struct Peer {
     pub identity: ::prost::alloc::vec::Vec<u8>,
 }
 /// Error denotes that something went wrong and contains the error message
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Error {
@@ -248,6 +268,7 @@ pub struct Error {
     pub content: ::prost::alloc::string::String,
 }
 /// Endpoints is a list of Endpoint(s)
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Endpoints {
@@ -255,6 +276,7 @@ pub struct Endpoints {
     pub endpoint: ::prost::alloc::vec::Vec<Endpoint>,
 }
 /// Endpoint is a combination of a host and a port
+#[allow(clippy::all)]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Endpoint {
