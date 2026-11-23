@@ -16,7 +16,7 @@ pub(crate) async fn read_body(response: reqwest::Response) -> Result<Vec<u8>, St
 async fn read_body_limited(mut response: reqwest::Response, limit: usize) -> Result<Vec<u8>, String> {
     check_announced_length(response.content_length(), limit)?;
     let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
+    while let Some(chunk) = response.chunk().await.map_err(|e| error_chain(&e))? {
         if body.len() + chunk.len() > limit {
             return Err(too_large(limit));
         }
@@ -30,7 +30,7 @@ async fn read_body_limited(mut response: reqwest::Response, limit: usize) -> Res
 #[cfg(target_arch = "wasm32")]
 async fn read_body_limited(response: reqwest::Response, limit: usize) -> Result<Vec<u8>, String> {
     check_announced_length(response.content_length(), limit)?;
-    let body = response.bytes().await.map_err(|e| e.to_string())?;
+    let body = response.bytes().await.map_err(|e| error_chain(&e))?;
     if body.len() > limit {
         return Err(too_large(limit));
     }
@@ -42,6 +42,19 @@ fn check_announced_length(length: Option<u64>, limit: usize) -> Result<(), Strin
         Some(length) if length > limit as u64 => Err(too_large(limit)),
         _ => Ok(()),
     }
+}
+
+/// The error with all its causes, as the clients report transport errors:
+/// reqwest's own message alone ("error decoding response body") hides why.
+fn error_chain(e: &dyn std::error::Error) -> String {
+    let mut message = e.to_string();
+    let mut source = e.source();
+    while let Some(cause) = source {
+        message.push_str(": ");
+        message.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    message
 }
 
 fn too_large(limit: usize) -> String {
@@ -59,6 +72,25 @@ mod tests {
             builder = builder.header("transfer-encoding", "chunked");
         }
         reqwest::Response::from(builder.body(body).unwrap())
+    }
+
+    #[test]
+    fn error_chain_lists_every_cause() {
+        let error = ChainedError(std::io::Error::other("connection reset"));
+        assert_eq!(error_chain(&error), "body read failed: connection reset");
+    }
+
+    #[derive(Debug)]
+    struct ChainedError(std::io::Error);
+    impl std::fmt::Display for ChainedError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("body read failed")
+        }
+    }
+    impl std::error::Error for ChainedError {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            Some(&self.0)
+        }
     }
 
     #[tokio::test]
