@@ -344,7 +344,10 @@ fn unique_channel() -> String {
         s.push(char::from_digit(d, 36).unwrap());
         n /= 36;
     }
-    format!("sdk-it-{}", s.chars().rev().collect::<String>())
+    // Tests run in parallel and may start within the same second.
+    static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("sdk-it-{}-{n}", s.chars().rev().collect::<String>())
 }
 
 fn generate_genesis_block(channel: &str) -> Vec<u8> {
