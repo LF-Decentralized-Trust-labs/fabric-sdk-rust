@@ -1,7 +1,8 @@
 //! Channel configuration transaction (configtx) helpers.
 //!
-//! This module provides everything needed to update a channel's configuration
-//! without external tooling (`configtxlator` / `peer channel update`):
+//! This module provides everything needed to create a channel and update its
+//! configuration without external tooling (`configtxgen` / `configtxlator` /
+//! `peer channel update`):
 //!
 //! 1. [`compute_config_update`] — computes the sparse [`ConfigUpdate`]
 //!    (read set / write set) between an original and an updated [`Config`].
@@ -15,7 +16,11 @@
 //!    [`orderer_org_policies`]) — the `MSP` value and the standard policies
 //!    of an organization, as `configtxgen` derives them from an MSP
 //!    directory and `configtx.yaml`, built from PEM input.
-//! 4. Signing and envelope assembly ([`sign_config_update`],
+//! 4. Channel creation ([`GenesisBuilder`], [`ApplicationOrg`],
+//!    [`OrdererOrg`]) — the genesis block of a new application channel, as
+//!    `configtxgen -outputBlock` builds it, for joining orderers through
+//!    the channel participation API and peers through cscc.
+//! 5. Signing and envelope assembly ([`sign_config_update`],
 //!    [`create_config_update_envelope`], [`add_signature`],
 //!    [`build_config_update_transaction`]) — produce the signed
 //!    `CONFIG_UPDATE` [`Envelope`] to submit to the orderer (see
@@ -61,18 +66,23 @@ use crate::{
     error::ConfigTxError,
     fabric::{
         common::{
-            ChannelHeader, Config, ConfigGroup, ConfigPolicy, ConfigSignature, ConfigUpdate,
-            ConfigUpdateEnvelope, ConfigValue, Envelope, Header, HeaderType, Payload, Policy,
-            SignatureHeader, msp_role::MspRoleType, policy::PolicyType,
+            Block, BlockData, BlockDataHashingStructure, BlockHeader, BlockMetadata,
+            BlockMetadataIndex, ChannelHeader, Config, ConfigEnvelope, ConfigGroup, ConfigPolicy,
+            ConfigSignature, ConfigUpdate, ConfigUpdateEnvelope, ConfigValue, Envelope,
+            HashingAlgorithm, Header, HeaderType, ImplicitMetaPolicy, LastConfig, Metadata,
+            OrdererAddresses, OrdererBlockMetadata, Payload, Policy, SignatureHeader,
+            implicit_meta_policy::Rule as ImplicitMetaRule, msp_role::MspRoleType,
+            policy::PolicyType,
         },
         etcdraft,
+        google_protobuf::Timestamp,
         msp::{FabricCryptoConfig, FabricMspConfig, FabricNodeOUs, FabricOuIdentifier, MspConfig},
-        orderer::ConsensusType,
-        protos::{AnchorPeer, AnchorPeers},
+        orderer::{BatchSize, BatchTimeout, ChannelRestrictions, ConsensusType, consensus_type},
+        protos::{AcLs, AnchorPeer, AnchorPeers, ApiResource},
     },
     gateway::collection::role_or_policy,
     identity::Identity,
-    implement::crypto::{generate_nonce, generate_transaction_id},
+    implement::crypto::{generate_nonce, generate_sha256_hash, generate_transaction_id},
 };
 
 use std::collections::BTreeMap;
@@ -951,6 +961,835 @@ pub fn remove_consenter(
 }
 
 // =====================================================================
+// Genesis block
+//
+// Port of configtxgen -outputBlock for an application channel without a
+// system channel (hyperledger/fabric internal/configtxgen/encoder and
+// common/genesis, release-2.5, Apache-2.0).
+// =====================================================================
+
+const HASHING_ALGORITHM_KEY: &str = "HashingAlgorithm";
+const BLOCK_DATA_HASHING_STRUCTURE_KEY: &str = "BlockDataHashingStructure";
+const ORDERER_ADDRESSES_KEY: &str = "OrdererAddresses";
+const CAPABILITIES_KEY: &str = "Capabilities";
+const ACLS_KEY: &str = "ACLs";
+const BATCH_SIZE_KEY: &str = "BatchSize";
+const BATCH_TIMEOUT_KEY: &str = "BatchTimeout";
+const CHANNEL_RESTRICTIONS_KEY: &str = "ChannelRestrictions";
+const ENDPOINTS_KEY: &str = "Endpoints";
+const BLOCK_VALIDATION_POLICY: &str = "BlockValidation";
+const LIFECYCLE_ENDORSEMENT_POLICY: &str = "LifecycleEndorsement";
+/// Mod policy of the channel-level `OrdererAddresses` value.
+const ORDERER_ADMINS_POLICY_PATH: &str = "/Channel/Orderer/Admins";
+/// `configtx.MaxLength` in Fabric.
+const CHANNEL_ID_MAX_LENGTH: usize = 249;
+/// `msgVersion` of Fabric's `common/genesis` (the encoder uses 0, the
+/// genesis factory 1).
+const GENESIS_CHANNEL_HEADER_VERSION: i32 = 1;
+
+/// An application organization of a new channel: the `Application/<name>`
+/// group of the genesis block.
+#[derive(Clone, Debug)]
+pub struct ApplicationOrg {
+    name: String,
+    msp: MspConfig,
+    policies: BTreeMap<String, ConfigPolicy>,
+    anchor_peers: Vec<AnchorPeer>,
+}
+
+impl ApplicationOrg {
+    /// An org with the given MSP and the standard [`org_policies`] for
+    /// `msp_id`. The group is named after the MSP ID, as
+    /// [`add_application_org`] names it.
+    ///
+    /// `msp_id` must be the MSP ID inside `msp`; the policies refer to it.
+    pub fn new(msp_id: &str, msp: MspConfig) -> Self {
+        ApplicationOrg {
+            name: msp_id.to_string(),
+            msp,
+            policies: org_policies(msp_id),
+            anchor_peers: vec![],
+        }
+    }
+
+    /// Names the group differently from the MSP ID (`Name` in
+    /// `configtx.yaml`).
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = name.into();
+        self
+    }
+
+    /// Replaces the standard policies.
+    pub fn with_policies(mut self, policies: BTreeMap<String, ConfigPolicy>) -> Self {
+        self.policies = policies;
+        self
+    }
+
+    /// Adds an anchor peer. Without any, the group has no `AnchorPeers`
+    /// value, as with `configtxgen`.
+    pub fn with_anchor_peer(mut self, host: impl Into<String>, port: i32) -> Self {
+        self.anchor_peers.push(AnchorPeer {
+            host: host.into(),
+            port,
+        });
+        self
+    }
+
+    fn group(&self) -> ConfigGroup {
+        let mut group = org_group(&self.msp, self.policies.clone());
+        if !self.anchor_peers.is_empty() {
+            group.values.insert(
+                ANCHOR_PEERS_KEY.into(),
+                admins_value(
+                    AnchorPeers {
+                        anchor_peers: self.anchor_peers.clone(),
+                    }
+                    .encode_to_vec(),
+                ),
+            );
+        }
+        group
+    }
+}
+
+/// An orderer organization of a new channel: the `Orderer/<name>` group of
+/// the genesis block.
+#[derive(Clone, Debug)]
+pub struct OrdererOrg {
+    name: String,
+    msp: MspConfig,
+    policies: BTreeMap<String, ConfigPolicy>,
+    endpoints: Vec<String>,
+}
+
+impl OrdererOrg {
+    /// An org with the given MSP and the standard [`orderer_org_policies`]
+    /// for `msp_id`, its group named after the MSP ID.
+    ///
+    /// `msp_id` must be the MSP ID inside `msp`; the policies refer to it.
+    pub fn new(msp_id: &str, msp: MspConfig) -> Self {
+        OrdererOrg {
+            name: msp_id.to_string(),
+            msp,
+            policies: orderer_org_policies(msp_id),
+            endpoints: vec![],
+        }
+    }
+
+    /// Names the group differently from the MSP ID (`Name` in
+    /// `configtx.yaml`, e.g. the test-network's `OrdererOrg`).
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = name.into();
+        self
+    }
+
+    /// Replaces the standard policies.
+    pub fn with_policies(mut self, policies: BTreeMap<String, ConfigPolicy>) -> Self {
+        self.policies = policies;
+        self
+    }
+
+    /// Adds an orderer endpoint (`host:port`) clients and peers deliver
+    /// from (`OrdererEndpoints` in `configtx.yaml`).
+    pub fn with_endpoint(mut self, address: impl Into<String>) -> Self {
+        self.endpoints.push(address.into());
+        self
+    }
+
+    fn group(&self) -> ConfigGroup {
+        let mut group = org_group(&self.msp, self.policies.clone());
+        if !self.endpoints.is_empty() {
+            group.values.insert(
+                ENDPOINTS_KEY.into(),
+                admins_value(
+                    OrdererAddresses {
+                        addresses: self.endpoints.clone(),
+                    }
+                    .encode_to_vec(),
+                ),
+            );
+        }
+        group
+    }
+}
+
+/// Builds the genesis block (block 0) of an application channel, as
+/// `configtxgen -outputBlock` does for a profile without a system channel.
+/// Join the orderers with it through the channel participation API
+/// ([`OsnadminClient::join_channel`](crate::osnadmin::OsnadminClient)),
+/// then the peers through cscc `JoinChain`.
+///
+/// The config tree has the standard layout `configtxgen` writes:
+///
+/// - `Channel`: `Readers`/`Writers` `ANY`, `Admins` `MAJORITY`;
+///   `HashingAlgorithm` SHA256, `BlockDataHashingStructure`, `Capabilities`,
+///   and `OrdererAddresses` only if set with
+///   [`with_orderer_address`](Self::with_orderer_address).
+/// - `Channel/Orderer`: `Readers`/`Writers` `ANY`, `Admins` `MAJORITY`,
+///   `BlockValidation` `ANY Writers`; `ConsensusType` etcdraft, `BatchSize`,
+///   `BatchTimeout`, `ChannelRestrictions`, `Capabilities`; one group per
+///   orderer org.
+/// - `Channel/Application`: `Readers`/`Writers` `ANY`, `Admins`,
+///   `Endorsement` and `LifecycleEndorsement` `MAJORITY`; `Capabilities`,
+///   `ACLs` if set; one group per application org.
+///
+/// Defaults are `configtxgen`'s: batch size 500 messages / 10 MiB absolute /
+/// 2 MiB preferred, batch timeout `2s`, etcdraft options tick `500ms`,
+/// election 10, heartbeat 1, 5 in-flight blocks, 16 MiB snapshot interval;
+/// capabilities `V2_0` (channel, orderer) and `V2_5` (application).
+///
+/// ```rust
+/// let block = GenesisBuilder::new("mychannel")
+///     .with_application_org(ApplicationOrg::new("Org1MSP", org1_msp).with_anchor_peer("peer0.org1", 7051))
+///     .with_orderer_org(OrdererOrg::new("OrdererMSP", orderer_msp).with_endpoint("orderer:7050"))
+///     .with_consenter("orderer", 7050, tls_cert_pem.clone(), tls_cert_pem)
+///     .build()?;
+/// osnadmin.join_channel(block.encode_to_vec()).await?;
+/// ```
+#[derive(Clone, Debug)]
+pub struct GenesisBuilder {
+    channel_id: String,
+    application_orgs: Vec<ApplicationOrg>,
+    orderer_orgs: Vec<OrdererOrg>,
+    consenters: Vec<etcdraft::Consenter>,
+    etcdraft_options: etcdraft::Options,
+    batch_size: BatchSize,
+    batch_timeout: String,
+    orderer_addresses: Vec<String>,
+    channel_capabilities: Vec<String>,
+    orderer_capabilities: Vec<String>,
+    application_capabilities: Vec<String>,
+    acls: BTreeMap<String, String>,
+}
+
+impl GenesisBuilder {
+    /// Starts a genesis block for `channel_id` with `configtxgen`'s
+    /// defaults.
+    pub fn new(channel_id: impl Into<String>) -> Self {
+        GenesisBuilder {
+            channel_id: channel_id.into(),
+            application_orgs: vec![],
+            orderer_orgs: vec![],
+            consenters: vec![],
+            etcdraft_options: etcdraft::Options {
+                tick_interval: "500ms".into(),
+                election_tick: 10,
+                heartbeat_tick: 1,
+                max_inflight_blocks: 5,
+                snapshot_interval_size: 16 * 1024 * 1024,
+            },
+            batch_size: BatchSize {
+                max_message_count: 500,
+                absolute_max_bytes: 10 * 1024 * 1024,
+                preferred_max_bytes: 2 * 1024 * 1024,
+            },
+            batch_timeout: "2s".into(),
+            orderer_addresses: vec![],
+            channel_capabilities: vec!["V2_0".into()],
+            orderer_capabilities: vec!["V2_0".into()],
+            application_capabilities: vec!["V2_5".into()],
+            acls: BTreeMap::new(),
+        }
+    }
+
+    /// Adds an application organization. At least one is required.
+    pub fn with_application_org(mut self, org: ApplicationOrg) -> Self {
+        self.application_orgs.push(org);
+        self
+    }
+
+    /// Adds an orderer organization. At least one is required.
+    pub fn with_orderer_org(mut self, org: OrdererOrg) -> Self {
+        self.orderer_orgs.push(org);
+        self
+    }
+
+    /// Adds an etcdraft consenter. The TLS certificates are PEM, as
+    /// `configtxgen` embeds the files `ClientTLSCert`/`ServerTLSCert` point
+    /// to. At least one consenter is required.
+    pub fn with_consenter(
+        mut self,
+        host: impl Into<String>,
+        port: u32,
+        client_tls_cert_pem: impl Into<Vec<u8>>,
+        server_tls_cert_pem: impl Into<Vec<u8>>,
+    ) -> Self {
+        self.consenters.push(etcdraft::Consenter {
+            host: host.into(),
+            port,
+            client_tls_cert: client_tls_cert_pem.into(),
+            server_tls_cert: server_tls_cert_pem.into(),
+        });
+        self
+    }
+
+    /// Replaces the etcdraft options.
+    pub fn with_etcdraft_options(mut self, options: etcdraft::Options) -> Self {
+        self.etcdraft_options = options;
+        self
+    }
+
+    /// Sets the batch size: `max_message_count` messages,
+    /// `absolute_max_bytes` hard limit, `preferred_max_bytes` target.
+    pub fn with_batch_size(
+        mut self,
+        max_message_count: u32,
+        absolute_max_bytes: u32,
+        preferred_max_bytes: u32,
+    ) -> Self {
+        self.batch_size = BatchSize {
+            max_message_count,
+            absolute_max_bytes,
+            preferred_max_bytes,
+        };
+        self
+    }
+
+    /// Sets the batch timeout as a Go duration string (`"2s"`, `"500ms"`,
+    /// `"1m30s"`), the format the orderer parses.
+    pub fn with_batch_timeout(mut self, timeout: impl Into<String>) -> Self {
+        self.batch_timeout = timeout.into();
+        self
+    }
+
+    /// Adds a channel-level orderer address (`Orderer.Addresses` in
+    /// `configtx.yaml`). Fabric deprecates it in favour of the per-org
+    /// [`OrdererOrg::with_endpoint`]; without any, the value is omitted.
+    pub fn with_orderer_address(mut self, address: impl Into<String>) -> Self {
+        self.orderer_addresses.push(address.into());
+        self
+    }
+
+    /// Replaces the channel capabilities (default `V2_0`). An empty list
+    /// omits the value.
+    pub fn with_channel_capabilities<I, S>(mut self, capabilities: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.channel_capabilities = capabilities.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Replaces the orderer capabilities (default `V2_0`). An empty list
+    /// omits the value.
+    pub fn with_orderer_capabilities<I, S>(mut self, capabilities: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.orderer_capabilities = capabilities.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Replaces the application capabilities (default `V2_5`). An empty list
+    /// omits the value.
+    pub fn with_application_capabilities<I, S>(mut self, capabilities: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.application_capabilities = capabilities.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Sets an ACL: `resource` (e.g. `"qscc/GetBlockByNumber"`) is guarded
+    /// by the policy at `policy_ref` (e.g. `"/Channel/Application/Readers"`).
+    /// Without any, the `ACLs` value is omitted and the peer's defaults
+    /// apply.
+    pub fn with_acl(mut self, resource: impl Into<String>, policy_ref: impl Into<String>) -> Self {
+        self.acls.insert(resource.into(), policy_ref.into());
+        self
+    }
+
+    /// Validates the inputs and builds the channel [`Config`] (sequence 0)
+    /// the genesis block carries.
+    ///
+    /// Errors:
+    /// - [`ConfigTxError::InvalidChannelId`],
+    /// - [`ConfigTxError::MissingGenesisField`] without application org,
+    ///   orderer org or consenter,
+    /// - [`ConfigTxError::AlreadyExists`] for two orgs with the same group
+    ///   name in the same section,
+    /// - [`ConfigTxError::InvalidPem`] for a consenter TLS certificate that
+    ///   is not a PEM certificate,
+    /// - [`ConfigTxError::InvalidOrdererValue`] for settings the orderer
+    ///   would refuse (zero batch sizes, preferred above absolute bytes, a
+    ///   non-positive or malformed duration, election tick not above
+    ///   heartbeat tick, a consenter without host or port).
+    pub fn build_config(&self) -> Result<Config, ConfigTxError> {
+        self.validate()?;
+
+        let mut orderer = ConfigGroup {
+            version: 0,
+            groups: BTreeMap::new(),
+            values: BTreeMap::new(),
+            policies: BTreeMap::from([
+                (
+                    READERS_POLICY.into(),
+                    implicit_meta_policy(ImplicitMetaRule::Any, READERS_POLICY),
+                ),
+                (
+                    WRITERS_POLICY.into(),
+                    implicit_meta_policy(ImplicitMetaRule::Any, WRITERS_POLICY),
+                ),
+                (
+                    ADMINS_POLICY.into(),
+                    implicit_meta_policy(ImplicitMetaRule::Majority, ADMINS_POLICY),
+                ),
+                (
+                    BLOCK_VALIDATION_POLICY.into(),
+                    implicit_meta_policy(ImplicitMetaRule::Any, WRITERS_POLICY),
+                ),
+            ]),
+            mod_policy: ADMINS_POLICY.into(),
+        };
+        orderer.values.insert(
+            BATCH_SIZE_KEY.into(),
+            admins_value(self.batch_size.encode_to_vec()),
+        );
+        orderer.values.insert(
+            BATCH_TIMEOUT_KEY.into(),
+            admins_value(
+                BatchTimeout {
+                    timeout: self.batch_timeout.clone(),
+                }
+                .encode_to_vec(),
+            ),
+        );
+        orderer.values.insert(
+            CHANNEL_RESTRICTIONS_KEY.into(),
+            admins_value(ChannelRestrictions { max_count: 0 }.encode_to_vec()),
+        );
+        if !self.orderer_capabilities.is_empty() {
+            orderer.values.insert(
+                CAPABILITIES_KEY.into(),
+                admins_value(encode_capabilities(&self.orderer_capabilities)),
+            );
+        }
+        let metadata = etcdraft::ConfigMetadata {
+            consenters: self.consenters.clone(),
+            options: Some(self.etcdraft_options.clone()),
+        };
+        orderer.values.insert(
+            CONSENSUS_TYPE_KEY.into(),
+            admins_value(
+                ConsensusType {
+                    r#type: ETCDRAFT_TYPE.into(),
+                    metadata: metadata.encode_to_vec(),
+                    state: consensus_type::State::Normal.into(),
+                }
+                .encode_to_vec(),
+            ),
+        );
+        for org in &self.orderer_orgs {
+            orderer.groups.insert(org.name.clone(), org.group());
+        }
+
+        let mut application = ConfigGroup {
+            version: 0,
+            groups: BTreeMap::new(),
+            values: BTreeMap::new(),
+            policies: BTreeMap::from([
+                (
+                    READERS_POLICY.into(),
+                    implicit_meta_policy(ImplicitMetaRule::Any, READERS_POLICY),
+                ),
+                (
+                    WRITERS_POLICY.into(),
+                    implicit_meta_policy(ImplicitMetaRule::Any, WRITERS_POLICY),
+                ),
+                (
+                    ADMINS_POLICY.into(),
+                    implicit_meta_policy(ImplicitMetaRule::Majority, ADMINS_POLICY),
+                ),
+                (
+                    ENDORSEMENT_POLICY.into(),
+                    implicit_meta_policy(ImplicitMetaRule::Majority, ENDORSEMENT_POLICY),
+                ),
+                (
+                    LIFECYCLE_ENDORSEMENT_POLICY.into(),
+                    implicit_meta_policy(ImplicitMetaRule::Majority, ENDORSEMENT_POLICY),
+                ),
+            ]),
+            mod_policy: ADMINS_POLICY.into(),
+        };
+        if !self.acls.is_empty() {
+            application
+                .values
+                .insert(ACLS_KEY.into(), admins_value(encode_acls(&self.acls)));
+        }
+        if !self.application_capabilities.is_empty() {
+            application.values.insert(
+                CAPABILITIES_KEY.into(),
+                admins_value(encode_capabilities(&self.application_capabilities)),
+            );
+        }
+        for org in &self.application_orgs {
+            application.groups.insert(org.name.clone(), org.group());
+        }
+
+        let mut channel = ConfigGroup {
+            version: 0,
+            groups: BTreeMap::from([
+                (ORDERER_GROUP.into(), orderer),
+                (APPLICATION_GROUP.into(), application),
+            ]),
+            values: BTreeMap::new(),
+            policies: BTreeMap::from([
+                (
+                    READERS_POLICY.into(),
+                    implicit_meta_policy(ImplicitMetaRule::Any, READERS_POLICY),
+                ),
+                (
+                    WRITERS_POLICY.into(),
+                    implicit_meta_policy(ImplicitMetaRule::Any, WRITERS_POLICY),
+                ),
+                (
+                    ADMINS_POLICY.into(),
+                    implicit_meta_policy(ImplicitMetaRule::Majority, ADMINS_POLICY),
+                ),
+            ]),
+            mod_policy: ADMINS_POLICY.into(),
+        };
+        channel.values.insert(
+            HASHING_ALGORITHM_KEY.into(),
+            admins_value(
+                HashingAlgorithm {
+                    name: "SHA256".into(),
+                }
+                .encode_to_vec(),
+            ),
+        );
+        channel.values.insert(
+            BLOCK_DATA_HASHING_STRUCTURE_KEY.into(),
+            admins_value(BlockDataHashingStructure { width: u32::MAX }.encode_to_vec()),
+        );
+        if !self.orderer_addresses.is_empty() {
+            channel.values.insert(
+                ORDERER_ADDRESSES_KEY.into(),
+                ConfigValue {
+                    version: 0,
+                    value: OrdererAddresses {
+                        addresses: self.orderer_addresses.clone(),
+                    }
+                    .encode_to_vec(),
+                    mod_policy: ORDERER_ADMINS_POLICY_PATH.into(),
+                },
+            );
+        }
+        if !self.channel_capabilities.is_empty() {
+            channel.values.insert(
+                CAPABILITIES_KEY.into(),
+                admins_value(encode_capabilities(&self.channel_capabilities)),
+            );
+        }
+
+        Ok(Config {
+            sequence: 0,
+            channel_group: Some(channel),
+        })
+    }
+
+    /// Validates the inputs and builds the genesis [`Block`]: number 0, no
+    /// previous hash, one unsigned `CONFIG` envelope (channel header version
+    /// 1, random nonce, no creator), the data hash over it, and the
+    /// metadata slots of Fabric's genesis factory (`SIGNATURES` and
+    /// `LAST_CONFIG` pointing at block 0). Errors as for
+    /// [`build_config`](Self::build_config).
+    pub fn build(&self) -> Result<Block, ConfigTxError> {
+        let config = self.build_config()?;
+
+        let nonce = generate_nonce();
+        let signature_header = SignatureHeader {
+            creator: vec![],
+            nonce: nonce.to_vec(),
+        };
+        let channel_header = ChannelHeader {
+            r#type: HeaderType::Config.into(),
+            version: GENESIS_CHANNEL_HEADER_VERSION,
+            // Whole seconds, as Fabric's MakeChannelHeader writes them.
+            timestamp: Some(Timestamp {
+                nanos: 0,
+                ..now_timestamp()
+            }),
+            channel_id: self.channel_id.clone(),
+            tx_id: generate_transaction_id(&nonce, &[]),
+            epoch: 0,
+            extension: vec![],
+            tls_cert_hash: vec![],
+        };
+        let payload = Payload {
+            header: Some(Header {
+                channel_header: channel_header.encode_to_vec(),
+                signature_header: signature_header.encode_to_vec(),
+            }),
+            data: ConfigEnvelope {
+                config: Some(config),
+                last_update: None,
+            }
+            .encode_to_vec(),
+        };
+        let envelope = Envelope {
+            payload: payload.encode_to_vec(),
+            signature: vec![],
+        };
+        let data = vec![envelope.encode_to_vec()];
+
+        let mut metadata = vec![vec![]; BlockMetadataIndex::CommitHash as usize + 1];
+        metadata[BlockMetadataIndex::Signatures as usize] = Metadata {
+            value: OrdererBlockMetadata {
+                last_config: Some(LastConfig { index: 0 }),
+                consenter_metadata: vec![],
+            }
+            .encode_to_vec(),
+            signatures: vec![],
+        }
+        .encode_to_vec();
+        // Fabric also writes Metadata{LastConfig{index: 0}} into the
+        // deprecated LAST_CONFIG slot; every field is a proto3 default, so
+        // it encodes to zero bytes and the slot stays empty.
+
+        Ok(Block {
+            header: Some(BlockHeader {
+                number: 0,
+                previous_hash: vec![],
+                data_hash: generate_sha256_hash(&data.concat()),
+            }),
+            data: Some(BlockData { data }),
+            metadata: Some(BlockMetadata { metadata }),
+        })
+    }
+
+    fn validate(&self) -> Result<(), ConfigTxError> {
+        validate_channel_id(&self.channel_id)?;
+        if self.application_orgs.is_empty() {
+            return Err(ConfigTxError::MissingGenesisField("application org"));
+        }
+        if self.orderer_orgs.is_empty() {
+            return Err(ConfigTxError::MissingGenesisField("orderer org"));
+        }
+        if self.consenters.is_empty() {
+            return Err(ConfigTxError::MissingGenesisField("consenter"));
+        }
+        unique_names(
+            APPLICATION_GROUP,
+            self.application_orgs.iter().map(|o| o.name.as_str()),
+        )?;
+        unique_names(
+            ORDERER_GROUP,
+            self.orderer_orgs.iter().map(|o| o.name.as_str()),
+        )?;
+
+        for (i, consenter) in self.consenters.iter().enumerate() {
+            if consenter.host.is_empty() || consenter.port == 0 {
+                return Err(ConfigTxError::InvalidOrdererValue {
+                    field: "consenter",
+                    reason: format!("consenter {} has no host or port", i),
+                });
+            }
+            certificate_der(
+                format!("consenters[{}].client_tls_cert", i),
+                &consenter.client_tls_cert,
+            )?;
+            certificate_der(
+                format!("consenters[{}].server_tls_cert", i),
+                &consenter.server_tls_cert,
+            )?;
+        }
+
+        validate_batch_size(&self.batch_size)?;
+        validate_batch_timeout(&self.batch_timeout)?;
+
+        let options = &self.etcdraft_options;
+        if !go_duration_is_positive(&options.tick_interval) {
+            return Err(ConfigTxError::InvalidOrdererValue {
+                field: "etcdraft tick interval",
+                reason: format!("'{}' is not a positive Go duration", options.tick_interval),
+            });
+        }
+        if options.heartbeat_tick == 0 || options.election_tick <= options.heartbeat_tick {
+            return Err(ConfigTxError::InvalidOrdererValue {
+                field: "etcdraft ticks",
+                reason: format!(
+                    "election tick ({}) must be greater than heartbeat tick ({}) and heartbeat tick above 0",
+                    options.election_tick, options.heartbeat_tick
+                ),
+            });
+        }
+        Ok(())
+    }
+}
+
+fn validate_channel_id(channel_id: &str) -> Result<(), ConfigTxError> {
+    let mut chars = channel_id.chars();
+    let valid = channel_id.len() <= CHANNEL_ID_MAX_LENGTH
+        && chars.next().is_some_and(|c| c.is_ascii_lowercase())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '-');
+    if valid {
+        Ok(())
+    } else {
+        Err(ConfigTxError::InvalidChannelId(channel_id.to_string()))
+    }
+}
+
+fn unique_names<'a>(
+    section: &str,
+    names: impl Iterator<Item = &'a str>,
+) -> Result<(), ConfigTxError> {
+    let mut seen = std::collections::BTreeSet::new();
+    for name in names {
+        if !seen.insert(name) {
+            return Err(ConfigTxError::AlreadyExists(format!(
+                "{} org {}",
+                section, name
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// The orderer's `validateBatchSize` (common/channelconfig/orderer.go).
+fn validate_batch_size(batch_size: &BatchSize) -> Result<(), ConfigTxError> {
+    let reason = if batch_size.max_message_count == 0 {
+        "max message count is 0".to_string()
+    } else if batch_size.absolute_max_bytes == 0 {
+        "absolute max bytes is 0".to_string()
+    } else if batch_size.preferred_max_bytes == 0 {
+        "preferred max bytes is 0".to_string()
+    } else if batch_size.preferred_max_bytes > batch_size.absolute_max_bytes {
+        format!(
+            "preferred max bytes ({}) is greater than absolute max bytes ({})",
+            batch_size.preferred_max_bytes, batch_size.absolute_max_bytes
+        )
+    } else {
+        return Ok(());
+    };
+    Err(ConfigTxError::InvalidOrdererValue {
+        field: "batch size",
+        reason,
+    })
+}
+
+/// The orderer's `validateBatchTimeout` (common/channelconfig/orderer.go).
+fn validate_batch_timeout(timeout: &str) -> Result<(), ConfigTxError> {
+    if go_duration_is_positive(timeout) {
+        Ok(())
+    } else {
+        Err(ConfigTxError::InvalidOrdererValue {
+            field: "batch timeout",
+            reason: format!("'{}' is not a positive Go duration", timeout),
+        })
+    }
+}
+
+/// Whether `s` parses with Go's `time.ParseDuration` to a positive value:
+/// an optional sign, then one or more `<decimal><unit>` with unit `ns`,
+/// `us`/`µs`/`μs`, `ms`, `s`, `m` or `h` (`"0"` alone is zero).
+fn go_duration_is_positive(s: &str) -> bool {
+    let (negative, mut rest) = match s.as_bytes().first() {
+        Some(b'-') => (true, &s[1..]),
+        Some(b'+') => (false, &s[1..]),
+        _ => (false, s),
+    };
+    if rest.is_empty() {
+        return false;
+    }
+    let mut total_nanos = 0f64;
+    while !rest.is_empty() {
+        let number_len = rest
+            .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+            .unwrap_or(rest.len());
+        let number = &rest[..number_len];
+        if number.is_empty() || number == "." || number.matches('.').count() > 1 {
+            return false;
+        }
+        let Ok(value) = number.parse::<f64>() else {
+            return false;
+        };
+        rest = &rest[number_len..];
+        let unit_len = rest
+            .find(|c: char| c.is_ascii_digit() || c == '.')
+            .unwrap_or(rest.len());
+        let nanos_per_unit = match &rest[..unit_len] {
+            "ns" => 1.0,
+            "us" | "µs" | "μs" => 1e3,
+            "ms" => 1e6,
+            "s" => 1e9,
+            "m" => 60e9,
+            "h" => 3600e9,
+            _ => return false,
+        };
+        rest = &rest[unit_len..];
+        total_nanos += value * nanos_per_unit;
+    }
+    !negative && total_nanos >= 1.0
+}
+
+fn implicit_meta_policy(rule: ImplicitMetaRule, sub_policy: &str) -> ConfigPolicy {
+    ConfigPolicy {
+        version: 0,
+        policy: Some(Policy {
+            r#type: PolicyType::ImplicitMeta.into(),
+            value: ImplicitMetaPolicy {
+                sub_policy: sub_policy.into(),
+                rule: rule.into(),
+            }
+            .encode_to_vec(),
+        }),
+        mod_policy: ADMINS_POLICY.into(),
+    }
+}
+
+/// Encodes `Capabilities` with its map entries in sorted order. The
+/// generated map is a `HashMap`, whose encoding order is random; a protobuf
+/// message may be split into concatenated parts, so encoding one entry at a
+/// time keeps the bytes deterministic.
+///
+/// Each entry is written by hand: Go's marshaller emits the empty
+/// `Capability` value as an explicit empty field (`12 00`), prost omits it.
+/// Both decode to the same map; writing it keeps the value byte-identical
+/// to `configtxgen`'s.
+fn encode_capabilities(capabilities: &[String]) -> Vec<u8> {
+    use prost::encoding::{WireType, encode_key, encode_varint, encoded_len_varint};
+
+    let sorted: std::collections::BTreeSet<&String> = capabilities.iter().collect();
+    let mut buf = Vec::new();
+    for name in sorted {
+        // map entry: key = 1 (string), value = 2 (empty Capability message)
+        let key_len = name.len();
+        let entry_len = 1 + encoded_len_varint(key_len as u64) + key_len + 2;
+        encode_key(1, WireType::LengthDelimited, &mut buf);
+        encode_varint(entry_len as u64, &mut buf);
+        encode_key(1, WireType::LengthDelimited, &mut buf);
+        encode_varint(key_len as u64, &mut buf);
+        buf.extend_from_slice(name.as_bytes());
+        encode_key(2, WireType::LengthDelimited, &mut buf);
+        encode_varint(0, &mut buf);
+    }
+    buf
+}
+
+/// Encodes `ACLs` with its map entries in sorted order (see
+/// [`encode_capabilities`]).
+fn encode_acls(acls: &BTreeMap<String, String>) -> Vec<u8> {
+    acls.iter()
+        .flat_map(|(resource, policy_ref)| {
+            AcLs {
+                acls: [(
+                    resource.clone(),
+                    ApiResource {
+                        policy_ref: policy_ref.clone(),
+                    },
+                )]
+                .into(),
+            }
+            .encode_to_vec()
+        })
+        .collect()
+}
+
+// =====================================================================
 // ConfigUpdate signing and envelope assembly
 // =====================================================================
 
@@ -1012,10 +1851,10 @@ pub fn decode_config_update_envelope(
 
 /// The current time as a protobuf timestamp (`web_time` under WASM, where
 /// `std::time::SystemTime::now` panics).
-fn now_timestamp() -> crate::fabric::google_protobuf::Timestamp {
+fn now_timestamp() -> Timestamp {
     #[cfg(feature = "client-wasm")]
     {
-        crate::fabric::google_protobuf::Timestamp {
+        Timestamp {
             seconds: web_time::SystemTime::now()
                 .duration_since(web_time::SystemTime::UNIX_EPOCH)
                 .expect("Invalid duration calc")
@@ -1089,6 +1928,7 @@ pub fn build_config_update_transaction(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fabric::common::Capabilities;
     use crate::identity::IdentityBuilder;
     use ecdsa::signature::Verifier;
 
@@ -2039,6 +2879,290 @@ JN5N0qJEtUIB1daOzzQEwQ0cJ4c+DaXwdBiU15hTDzE=
         {
             Err(ConfigTxError::NodeOuCertNotInChain(_)) => {}
             other => panic!("expected NodeOuCertNotInChain, got {:?}", other),
+        }
+    }
+
+    // =========================================================
+    // GenesisBuilder
+    // =========================================================
+
+    fn test_msp(msp_id: &str) -> MspConfig {
+        MspConfigBuilder::new(msp_id)
+            .with_root_cert(TEST_CERT_1)
+            .build()
+            .unwrap()
+    }
+
+    fn minimal_genesis() -> GenesisBuilder {
+        GenesisBuilder::new("testchannel")
+            .with_application_org(ApplicationOrg::new("Org1MSP", test_msp("Org1MSP")))
+            .with_orderer_org(OrdererOrg::new("OrdererMSP", test_msp("OrdererMSP")))
+            .with_consenter("orderer.example.com", 7050, TEST_CERT_1, TEST_CERT_1)
+    }
+
+    fn channel_group(builder: &GenesisBuilder) -> ConfigGroup {
+        builder.build_config().unwrap().channel_group.unwrap()
+    }
+
+    fn expect_orderer_value_error(builder: GenesisBuilder, expected_field: &str) {
+        match builder.build() {
+            Err(ConfigTxError::InvalidOrdererValue { field, .. }) => {
+                assert_eq!(field, expected_field)
+            }
+            other => panic!(
+                "expected InvalidOrdererValue({expected_field}), got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn genesis_defaults_are_configtxgens() {
+        let channel = channel_group(&minimal_genesis());
+        let orderer = &channel.groups["Orderer"];
+        let batch_size = BatchSize::decode(orderer.values["BatchSize"].value.as_slice()).unwrap();
+        assert_eq!(
+            (
+                batch_size.max_message_count,
+                batch_size.absolute_max_bytes,
+                batch_size.preferred_max_bytes
+            ),
+            (500, 10 * 1024 * 1024, 2 * 1024 * 1024)
+        );
+        let timeout =
+            BatchTimeout::decode(orderer.values["BatchTimeout"].value.as_slice()).unwrap();
+        assert_eq!(timeout.timeout, "2s");
+        let consensus =
+            ConsensusType::decode(orderer.values["ConsensusType"].value.as_slice()).unwrap();
+        let metadata = etcdraft::ConfigMetadata::decode(consensus.metadata.as_slice()).unwrap();
+        let options = metadata.options.unwrap();
+        assert_eq!(options.tick_interval, "500ms");
+        assert_eq!((options.election_tick, options.heartbeat_tick), (10, 1));
+        assert_eq!(options.max_inflight_blocks, 5);
+        assert_eq!(options.snapshot_interval_size, 16 * 1024 * 1024);
+
+        // Optional values are omitted unless set.
+        assert!(!channel.values.contains_key("OrdererAddresses"));
+        assert!(!channel.groups["Application"].values.contains_key("ACLs"));
+        assert!(
+            !channel.groups["Application"].groups["Org1MSP"]
+                .values
+                .contains_key("AnchorPeers")
+        );
+        assert!(
+            !orderer.groups["OrdererMSP"]
+                .values
+                .contains_key("Endpoints")
+        );
+    }
+
+    #[test]
+    fn genesis_capabilities_are_sorted_and_decodable() {
+        let builder = minimal_genesis()
+            .with_channel_capabilities(["V2_0", "V1_4_3"])
+            .with_orderer_capabilities(Vec::<String>::new());
+        let channel = channel_group(&builder);
+        let value = &channel.values["Capabilities"].value;
+        let decoded = Capabilities::decode(value.as_slice()).unwrap();
+        let mut names: Vec<_> = decoded.capabilities.keys().cloned().collect();
+        names.sort();
+        assert_eq!(names, ["V1_4_3", "V2_0"]);
+        // Sorted entries: V1_4_3 first, whatever the input order.
+        assert_eq!(&value[4..10], b"V1_4_3");
+        // An empty list omits the value.
+        assert!(
+            !channel.groups["Orderer"]
+                .values
+                .contains_key("Capabilities")
+        );
+    }
+
+    #[test]
+    fn genesis_acls_anchor_peers_and_addresses() {
+        let builder = GenesisBuilder::new("testchannel")
+            .with_application_org(
+                ApplicationOrg::new("Org1MSP", test_msp("Org1MSP"))
+                    .with_anchor_peer("peer0.org1.example.com", 7051),
+            )
+            .with_orderer_org(
+                OrdererOrg::new("OrdererMSP", test_msp("OrdererMSP"))
+                    .with_endpoint("orderer.example.com:7050"),
+            )
+            .with_consenter("orderer.example.com", 7050, TEST_CERT_1, TEST_CERT_1)
+            .with_orderer_address("orderer.example.com:7050")
+            .with_acl("qscc/GetChainInfo", "/Channel/Application/Readers")
+            .with_acl("cscc/GetConfigBlock", "/Channel/Application/Readers");
+        let channel = channel_group(&builder);
+
+        let acls = AcLs::decode(
+            channel.groups["Application"].values["ACLs"]
+                .value
+                .as_slice(),
+        )
+        .unwrap();
+        assert_eq!(acls.acls.len(), 2);
+        assert_eq!(
+            acls.acls["qscc/GetChainInfo"].policy_ref,
+            "/Channel/Application/Readers"
+        );
+
+        let anchors = AnchorPeers::decode(
+            channel.groups["Application"].groups["Org1MSP"].values["AnchorPeers"]
+                .value
+                .as_slice(),
+        )
+        .unwrap();
+        assert_eq!(anchors.anchor_peers[0].port, 7051);
+
+        let addresses = &channel.values["OrdererAddresses"];
+        assert_eq!(addresses.mod_policy, "/Channel/Orderer/Admins");
+        let endpoints = OrdererAddresses::decode(
+            channel.groups["Orderer"].groups["OrdererMSP"].values["Endpoints"]
+                .value
+                .as_slice(),
+        )
+        .unwrap();
+        assert_eq!(endpoints.addresses, ["orderer.example.com:7050"]);
+    }
+
+    #[test]
+    fn genesis_block_is_well_formed() {
+        let block = minimal_genesis().build().unwrap();
+        let header = block.header.unwrap();
+        assert_eq!(header.number, 0);
+        assert!(header.previous_hash.is_empty());
+        let data = block.data.unwrap().data;
+        assert_eq!(header.data_hash, generate_sha256_hash(&data.concat()));
+        assert_eq!(block.metadata.unwrap().metadata.len(), 5);
+
+        let envelope = Envelope::decode(data[0].as_slice()).unwrap();
+        assert!(envelope.signature.is_empty());
+        let payload = Payload::decode(envelope.payload.as_slice()).unwrap();
+        let channel_header =
+            ChannelHeader::decode(payload.header.unwrap().channel_header.as_slice()).unwrap();
+        assert_eq!(channel_header.r#type, i32::from(HeaderType::Config));
+        assert_eq!(channel_header.channel_id, "testchannel");
+        let config = ConfigEnvelope::decode(payload.data.as_slice())
+            .unwrap()
+            .config
+            .unwrap();
+        assert_eq!(config, minimal_genesis().build_config().unwrap());
+    }
+
+    #[test]
+    fn genesis_rejects_bad_channel_ids() {
+        for id in ["", "MyChannel", "1channel", "my_channel", &"a".repeat(250)] {
+            match minimal_genesis_with_id(id).build() {
+                Err(ConfigTxError::InvalidChannelId(got)) => assert_eq!(got, id),
+                other => panic!("expected InvalidChannelId({id}), got {:?}", other),
+            }
+        }
+        for id in ["a", "my-channel.2", &"a".repeat(249)] {
+            minimal_genesis_with_id(id).build().unwrap();
+        }
+    }
+
+    fn minimal_genesis_with_id(id: &str) -> GenesisBuilder {
+        GenesisBuilder {
+            channel_id: id.to_string(),
+            ..minimal_genesis()
+        }
+    }
+
+    #[test]
+    fn genesis_requires_orgs_and_consenter() {
+        let cases = [
+            (
+                GenesisBuilder::new("c")
+                    .with_orderer_org(OrdererOrg::new("O", test_msp("O")))
+                    .with_consenter("o", 1, TEST_CERT_1, TEST_CERT_1),
+                "application org",
+            ),
+            (
+                GenesisBuilder::new("c")
+                    .with_application_org(ApplicationOrg::new("A", test_msp("A")))
+                    .with_consenter("o", 1, TEST_CERT_1, TEST_CERT_1),
+                "orderer org",
+            ),
+            (
+                GenesisBuilder::new("c")
+                    .with_application_org(ApplicationOrg::new("A", test_msp("A")))
+                    .with_orderer_org(OrdererOrg::new("O", test_msp("O"))),
+                "consenter",
+            ),
+        ];
+        for (builder, expected) in cases {
+            match builder.build() {
+                Err(ConfigTxError::MissingGenesisField(field)) => assert_eq!(field, expected),
+                other => panic!("expected MissingGenesisField({expected}), got {:?}", other),
+            }
+        }
+    }
+
+    #[test]
+    fn genesis_rejects_duplicate_org_names() {
+        let builder = minimal_genesis().with_application_org(
+            ApplicationOrg::new("Org2MSP", test_msp("Org2MSP")).with_name("Org1MSP"),
+        );
+        match builder.build() {
+            Err(ConfigTxError::AlreadyExists(name)) => assert!(name.contains("Org1MSP")),
+            other => panic!("expected AlreadyExists, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn genesis_rejects_invalid_orderer_values() {
+        expect_orderer_value_error(minimal_genesis().with_batch_size(0, 10, 10), "batch size");
+        expect_orderer_value_error(minimal_genesis().with_batch_size(10, 10, 11), "batch size");
+        expect_orderer_value_error(minimal_genesis().with_batch_timeout("2"), "batch timeout");
+        expect_orderer_value_error(minimal_genesis().with_batch_timeout("-1s"), "batch timeout");
+        expect_orderer_value_error(minimal_genesis().with_batch_timeout("0s"), "batch timeout");
+        expect_orderer_value_error(
+            minimal_genesis().with_etcdraft_options(etcdraft::Options {
+                tick_interval: "500ms".into(),
+                election_tick: 1,
+                heartbeat_tick: 1,
+                max_inflight_blocks: 5,
+                snapshot_interval_size: 1,
+            }),
+            "etcdraft ticks",
+        );
+        expect_orderer_value_error(
+            minimal_genesis().with_etcdraft_options(etcdraft::Options {
+                tick_interval: "half a second".into(),
+                election_tick: 10,
+                heartbeat_tick: 1,
+                max_inflight_blocks: 5,
+                snapshot_interval_size: 1,
+            }),
+            "etcdraft tick interval",
+        );
+        expect_orderer_value_error(
+            minimal_genesis().with_consenter("", 7050, TEST_CERT_1, TEST_CERT_1),
+            "consenter",
+        );
+        match minimal_genesis()
+            .with_consenter("o2", 7050, TEST_CERT_1, "not a pem")
+            .build()
+        {
+            Err(ConfigTxError::InvalidPem { field, .. }) => {
+                assert_eq!(field, "consenters[1].server_tls_cert")
+            }
+            other => panic!("expected InvalidPem, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn go_duration_parsing_follows_time_parse_duration() {
+        for ok in [
+            "2s", "500ms", "1m30s", "1.5h", "+3us", "3µs", "3μs", "100ns", ".5s",
+        ] {
+            assert!(go_duration_is_positive(ok), "{ok}");
+        }
+        for bad in [
+            "", "0", "0s", "2", "s", "-1s", "1x", "1..5s", "1.s5", "0.1ns",
+        ] {
+            assert!(!go_duration_is_positive(bad), "{bad}");
         }
     }
 

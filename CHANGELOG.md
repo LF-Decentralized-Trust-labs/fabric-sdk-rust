@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **`configtx::GenesisBuilder`**: builds the genesis block of an application
+  channel (no system channel; join orderers through osnadmin) from
+  `ApplicationOrg`s, `OrdererOrg`s, etcdraft consenters, batch size and
+  timeout, capabilities and optional ACLs — `configtxgen -outputBlock`
+  without the binary, WASM-safe. The config tree is byte-identical to
+  `configtxgen`'s for the test-network's `ChannelUsingRaft` profile, and the
+  block header and metadata follow Fabric's genesis factory
+  (`tests/configtx_fixtures.rs`). Inputs the orderer would refuse (channel
+  ID, batch size, durations, etcdraft ticks, consenter TLS PEMs) are
+  rejected with new `ConfigTxError` variants `InvalidChannelId`,
+  `MissingGenesisField` and `InvalidOrdererValue`.
 - **`configtx::org_policies` and `configtx::orderer_org_policies`**: the
   standard `Readers`/`Writers`/`Admins`(/`Endorsement`) signature policies of
   an application or orderer organization with NodeOUs, ready for

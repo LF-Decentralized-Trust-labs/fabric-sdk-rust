@@ -102,6 +102,15 @@ pub enum ConfigTxError {
     /// nor an intermediate certificate of the MSP. Fabric rejects such an MSP
     /// when it is loaded from the channel config.
     NodeOuCertNotInChain(crate::fabric::common::msp_role::MspRoleType),
+    /// The channel ID breaks Fabric's rules: 1 to 249 characters, a lowercase
+    /// letter followed by lowercase letters, digits, `.` or `-`.
+    InvalidChannelId(String),
+    /// A genesis block input that is required was not set (`"application
+    /// org"`, `"orderer org"` or `"consenter"`).
+    MissingGenesisField(&'static str),
+    /// An orderer setting has a value the orderer rejects (batch size, batch
+    /// timeout, etcdraft options or consenter). `field` names the setting.
+    InvalidOrdererValue { field: &'static str, reason: String },
 }
 
 impl std::error::Error for ConfigTxError {}
@@ -128,6 +137,17 @@ impl std::fmt::Display for ConfigTxError {
             ConfigTxError::MissingMspField(field) => write!(f, "MSP config has no {}", field),
             ConfigTxError::InvalidPem { field, reason } => {
                 write!(f, "Invalid PEM in {}: {}", field, reason)
+            }
+            ConfigTxError::InvalidChannelId(id) => write!(
+                f,
+                "Invalid channel ID '{}': expected 1 to 249 characters matching [a-z][a-z0-9.-]*",
+                id
+            ),
+            ConfigTxError::MissingGenesisField(field) => {
+                write!(f, "Genesis block has no {}", field)
+            }
+            ConfigTxError::InvalidOrdererValue { field, reason } => {
+                write!(f, "Invalid {}: {}", field, reason)
             }
             ConfigTxError::InvalidNodeOuRole(role) => {
                 write!(f, "Role {} has no NodeOU", role.as_str_name())
