@@ -88,7 +88,8 @@
   Fabric CA, osnadmin and operations clients added the CA to the built-in
   public roots, so any public CA's certificate for the host name was
   accepted as well. With `with_tls`, only the given certificates are
-  trusted now, and the PEM may be a bundle.
+  trusted now, and the PEM may be a bundle. A PEM without any certificate
+  is rejected by `build` instead of failing every request later.
 - **Fixed: `IdentityBuilder::build` returns an error for an invalid key.**
   It panicked instead, and a SEC1 `EC PRIVATE KEY` PEM always failed
   because the label was rewritten to PKCS#8. SEC1 keys are now accepted

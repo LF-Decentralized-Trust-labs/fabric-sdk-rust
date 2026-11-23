@@ -176,8 +176,7 @@ impl OsnadminClientBuilder {
         if let Some(tls) = self.tls {
             // Only the configured CA: a certificate from any public CA for
             // this host name would be accepted too if the built-in roots stayed.
-            let certs = reqwest::Certificate::from_pem_bundle(&tls)
-                .map_err(|e| BuilderError::InvalidParameter(e.to_string()))?;
+            let certs = crate::implement::rest_tls::tls_roots(&tls)?;
             builder = builder.tls_certs_only(certs);
         }
 
