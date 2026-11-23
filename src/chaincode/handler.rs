@@ -7,7 +7,7 @@ use crate::{
         protos::{ChaincodeId, ChaincodeInput, ChaincodeMessage, Response, chaincode_message},
     },
 };
-use futures_channel::mpsc::Receiver;
+use futures_channel::mpsc::{Receiver, UnboundedReceiver};
 use futures_util::StreamExt;
 use prost::Message;
 use tokio::sync::Mutex;
@@ -19,7 +19,7 @@ pub struct MessageHandler {
     ///Helper struct to generate messages to the peer
     message_builder: Arc<Mutex<MessageBuilder>>,
     chaincode_id: ChaincodeId,
-    transaction_queue: Receiver<ChaincodeMessage>,
+    transaction_queue: UnboundedReceiver<ChaincodeMessage>,
     peer_response_queue: Arc<Mutex<Receiver<ChaincodeMessage>>>,
 }
 impl MessageHandler {
@@ -30,8 +30,13 @@ impl MessageHandler {
     ) -> MessageHandler {
         let (tx, rx) = futures_channel::mpsc::channel::<ChaincodeMessage>(100);
 
+        // Unbounded: transactions run one at a time, so a bounded queue fills
+        // up as soon as the peer sends more at once, and the router can't wait
+        // for space either, because it also delivers the peer's answers the
+        // running transaction is waiting for. The peer bounds how many
+        // transactions it has in flight.
         let (transaction_queue_sender, transaction_queue_receiver) =
-            futures_channel::mpsc::channel(100);
+            futures_channel::mpsc::unbounded();
         let (peer_response_sender, peer_response_receiver) = futures_channel::mpsc::channel(100);
 
         let router =

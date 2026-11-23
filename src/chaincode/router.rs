@@ -1,4 +1,4 @@
-use futures_channel::mpsc::{Receiver, Sender};
+use futures_channel::mpsc::{Receiver, Sender, UnboundedSender};
 use futures_util::StreamExt;
 use tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity, Uri};
 
@@ -15,13 +15,13 @@ pub struct Router {
     rx: Receiver<ChaincodeMessage>,
     ///The client connecting to the peer. It will hold the connection as long as this contract runs
     client: ChaincodeSupportClient<Channel>,
-    transaction_queue: Sender<ChaincodeMessage>,
+    transaction_queue: UnboundedSender<ChaincodeMessage>,
     peer_response_queue: Sender<ChaincodeMessage>,
 }
 impl Router {
     pub async fn new(
         metadata: &Metadata,
-        transaction_queue: Sender<ChaincodeMessage>,
+        transaction_queue: UnboundedSender<ChaincodeMessage>,
         peer_response_queue: Sender<ChaincodeMessage>,
         rx: Receiver<ChaincodeMessage>,
     ) -> Self {
@@ -93,7 +93,7 @@ impl Router {
                     }
                     Ok(chaincode_message::Type::Transaction) => {
                         eprintln!("[Router] Received transaction {}", message.txid);
-                        if let Err(err) = self.transaction_queue.start_send(message) {
+                        if let Err(err) = self.transaction_queue.unbounded_send(message) {
                             eprintln!("[Router] Error seinding transaction into queue: {}", err);
                         }
                     }

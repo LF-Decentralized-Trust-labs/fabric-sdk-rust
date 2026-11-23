@@ -50,6 +50,13 @@
 - **`collection::role_or_policy`**: `OR('<msp>.<role>', ...)` signature
   policy over any MSP roles; `member_or_policy` now delegates to it.
 
+- **Fixed: the chaincode no longer drops transactions under load.**
+  Transactions run one at a time from a queue of 100. When the peer sent
+  more at once, the router could not queue them and dropped them with a log
+  line; nothing answered them, so each of those clients waited for the
+  peer's execute timeout (30 s by default). Anyone allowed to invoke the
+  chaincode could cause it by sending many requests at once. The queue is
+  now unbounded; the peer bounds how many transactions it has in flight.
 - **Fixed: a peer ERROR reply no longer hangs the chaincode.** The peer
   answers a failed ledger call (a rejected rich query or bookmark, a denied
   private-data read, an invalid key) with `ERROR` instead of `RESPONSE`. The
