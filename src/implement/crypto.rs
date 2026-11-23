@@ -1,5 +1,3 @@
-use std::io::Write;
-
 use prost::Message;
 use sha2::Digest;
 
@@ -27,9 +25,7 @@ pub(crate) fn generate_nonce() -> [u8; NONCE_LENGTH] {
 }
 
 pub(crate) fn generate_sha256_hash(bytes: &[u8]) -> Vec<u8> {
-    let mut hasher = sha2::Sha256::default();
-    hasher.write_all(bytes).unwrap();
-    hasher.finalize().to_vec()
+    sha2::Sha256::digest(bytes).to_vec()
 }
 
 pub(crate) fn generate_chaincode_definition(
