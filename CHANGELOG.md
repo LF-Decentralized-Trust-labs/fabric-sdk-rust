@@ -50,6 +50,14 @@
 - **`collection::role_or_policy`**: `OR('<msp>.<role>', ...)` signature
   policy over any MSP roles; `member_or_policy` now delegates to it.
 
+- **Fixed: a TLS client no longer connects in plaintext with a non-https
+  scheme.** `ClientBuilder` and `OrdererClientBuilder` require a TLS CA, but
+  tonic only uses TLS for `https`: `with_scheme("http")` connected without
+  TLS and without an error, so proposals, transient data and results went
+  unencrypted and unauthenticated. `build` now returns
+  `BuilderError::InvalidParameter` for any scheme other than `https` (native
+  builds; on wasm the scheme is the gRPC-web proxy's) instead of panicking
+  on an unparsable one.
 - **Fixed: the chaincode no longer drops transactions under load.**
   Transactions run one at a time from a queue of 100. When the peer sent
   more at once, the router could not queue them and dropped them with a log

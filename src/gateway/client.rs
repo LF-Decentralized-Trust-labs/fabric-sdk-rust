@@ -410,7 +410,10 @@ impl ClientBuilder {
         Ok(self)
     }
 
-    /// Chooses which scheme is being used. Default value is `https`
+    /// Chooses which scheme is being used. Default value is `https`.
+    ///
+    /// Native builds always use TLS, so [`build`](Self::build) rejects any
+    /// other scheme. On wasm the scheme is the one of the gRPC-web proxy URL.
     pub fn with_scheme(mut self, scheme: impl Into<String>) -> Result<ClientBuilder, BuilderError> {
         let scheme = scheme.into().trim().to_string();
         if scheme.is_empty() {
@@ -451,8 +454,6 @@ impl ClientBuilder {
 
         #[cfg(not(feature = "client-wasm"))]
         let (uri, tls_config) = {
-            use std::str::FromStr;
-
             let tls = match self.tls {
                 Some(tls) => tls,
                 None => return Err(BuilderError::MissingParameter("tls".into())),
@@ -460,16 +461,11 @@ impl ClientBuilder {
             //TODO Allow custom tls config
             let tls_config = tonic::transport::ClientTlsConfig::new()
                 .ca_certificate(tonic::transport::Certificate::from_pem(tls.as_slice()));
-            let scheme = match self.scheme {
-                Some(scheme) => scheme,
-                None => "https".to_string(),
-            };
+            let scheme = tls_scheme(self.scheme)?;
             let authority = match self.authority {
                 Some(authority) => authority,
                 None => "localhost:7051".to_string(),
             };
-            let scheme = tonic::codegen::http::uri::Scheme::from_str(scheme.as_str())
-                .expect("Invalid scheme");
             let uri_builder = tonic::transport::Uri::builder()
                 .scheme(scheme)
                 .authority(authority)
@@ -602,5 +598,37 @@ fn validate_non_empty(value: impl Into<String>, field: &str) -> Result<String, B
         )))
     } else {
         Ok(value)
+    }
+}
+
+/// The URI scheme of a native gRPC connection, which always has a TLS CA.
+/// tonic only uses TLS for `https` and silently connects in plaintext for
+/// any other scheme, so anything else is rejected.
+#[cfg(not(feature = "client-wasm"))]
+pub(crate) fn tls_scheme(
+    scheme: Option<String>,
+) -> Result<tonic::codegen::http::uri::Scheme, BuilderError> {
+    match scheme.as_deref() {
+        None | Some("https") => Ok(tonic::codegen::http::uri::Scheme::HTTPS),
+        Some(other) => Err(BuilderError::InvalidParameter(format!(
+            "scheme must be https, got {other:?}: tonic would ignore the TLS configuration"
+        ))),
+    }
+}
+
+#[cfg(all(test, not(feature = "client-wasm")))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tls_scheme_accepts_only_https() {
+        assert_eq!(tls_scheme(None).unwrap().as_str(), "https");
+        assert_eq!(tls_scheme(Some("https".into())).unwrap().as_str(), "https");
+        for scheme in ["http", "HTTP", "grpc", "ftp"] {
+            match tls_scheme(Some(scheme.into())) {
+                Err(BuilderError::InvalidParameter(reason)) => assert!(reason.contains(scheme)),
+                other => panic!("expected InvalidParameter for {scheme}, got {other:?}"),
+            }
+        }
     }
 }
