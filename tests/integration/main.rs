@@ -6,7 +6,7 @@ mod lifecycle;
 // independent of how the test harness sorts test names.
 #[test]
 fn test_integration() {
-    dotenv::dotenv().unwrap();
+    dotenvy::dotenv().unwrap();
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
