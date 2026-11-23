@@ -327,7 +327,7 @@ impl Client {
                 .clone(),
         )
         .max_encoding_message_size(usize::MAX)
-        .max_decoding_message_size(usize::MAX);
+        .max_decoding_message_size(MAX_GRPC_MESSAGE_SIZE);
         match endorser_client.process_proposal(signed_proposal).await {
             Ok(response) => Ok(response.into_inner()),
             Err(err) => Err(SubmitError::NodeError(
@@ -600,6 +600,12 @@ fn validate_non_empty(value: impl Into<String>, field: &str) -> Result<String, B
         Ok(value)
     }
 }
+
+/// Largest gRPC message the clients decode: Fabric's default
+/// (`comm.DefaultMaxRecvMsgSize`, 100 MiB), which peers and orderers also
+/// apply to what they receive. Unbounded, a faulty or malicious node could
+/// make the client allocate any amount.
+pub(crate) const MAX_GRPC_MESSAGE_SIZE: usize = 100 * 1024 * 1024;
 
 /// The URI scheme of a native gRPC connection, which always has a TLS CA.
 /// tonic only uses TLS for `https` and silently connects in plaintext for

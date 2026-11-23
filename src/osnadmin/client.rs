@@ -292,10 +292,9 @@ impl OsnadminClient {
         if !status.is_success() {
             return Err(Self::error_from_response(status, response).await);
         }
-        let bytes = response
-            .bytes()
+        let bytes = crate::implement::http_body::read_body(response)
             .await
-            .map_err(|e| OsnadminError::HttpError(full_error_chain(&e)))?;
+            .map_err(OsnadminError::HttpError)?;
         serde_json::from_slice(&bytes).map_err(|e| {
             OsnadminError::ParseError(format!("{}: body={}", e, String::from_utf8_lossy(&bytes)))
         })
@@ -305,7 +304,9 @@ impl OsnadminClient {
         status: reqwest::StatusCode,
         response: reqwest::Response,
     ) -> OsnadminError {
-        let body = response.bytes().await.unwrap_or_default();
+        let body = crate::implement::http_body::read_body(response)
+            .await
+            .unwrap_or_default();
         let message = serde_json::from_slice::<ErrorResponse>(&body)
             .map(|e| e.error)
             .unwrap_or_else(|_| String::from_utf8_lossy(&body).into_owned());

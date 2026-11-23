@@ -79,6 +79,11 @@
   `BuilderError::InvalidParameter` for any scheme other than `https` (native
   builds; on wasm the scheme is the gRPC-web proxy's) instead of panicking
   on an unparsable one.
+- **Responses are size-bounded.** The gateway (endorser) and orderer
+  gRPC clients decoded messages of any size, and the Fabric CA, osnadmin
+  and operations clients read bodies without limit, so a faulty or
+  malicious node could make the application allocate any amount. Both now
+  stop at Fabric's default message limit, 100 MiB.
 - **REST clients trust only the configured TLS CA.** `with_tls` on the
   Fabric CA, osnadmin and operations clients added the CA to the built-in
   public roots, so any public CA's certificate for the host name was

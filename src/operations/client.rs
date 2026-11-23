@@ -191,10 +191,9 @@ impl OperationsClient {
             .send()
             .await
             .map_err(|e| OperationsError::HttpError(full_error_chain(&e)))?;
-        let bytes = response
-            .bytes()
+        let bytes = crate::implement::http_body::read_body(response)
             .await
-            .map_err(|e| OperationsError::HttpError(full_error_chain(&e)))?;
+            .map_err(OperationsError::HttpError)?;
         serde_json::from_slice(&bytes).map_err(|e| {
             OperationsError::ParseError(format!(
                 "{}: body={}",
@@ -235,7 +234,9 @@ impl OperationsClient {
         if status.is_success() {
             Ok(())
         } else {
-            let body = response.bytes().await.unwrap_or_default();
+            let body = crate::implement::http_body::read_body(response)
+                .await
+                .unwrap_or_default();
             Err(OperationsError::ServerError {
                 status: status.as_u16(),
                 message: String::from_utf8_lossy(&body).into_owned(),
@@ -262,10 +263,9 @@ impl OperationsClient {
             .map_err(|e| OperationsError::HttpError(full_error_chain(&e)))?;
 
         let status = response.status();
-        let bytes = response
-            .bytes()
+        let bytes = crate::implement::http_body::read_body(response)
             .await
-            .map_err(|e| OperationsError::HttpError(full_error_chain(&e)))?;
+            .map_err(OperationsError::HttpError)?;
 
         if !status.is_success() {
             return Err(OperationsError::ServerError {

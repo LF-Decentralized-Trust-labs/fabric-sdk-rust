@@ -97,7 +97,7 @@ impl OrdererClient {
         match &self.channel {
             Some(channel) => Ok(AtomicBroadcastClient::new(channel.clone())
                 .max_encoding_message_size(usize::MAX)
-                .max_decoding_message_size(usize::MAX)),
+                .max_decoding_message_size(crate::gateway::client::MAX_GRPC_MESSAGE_SIZE)),
             None => Err(SubmitError::NotConnected),
         }
     }

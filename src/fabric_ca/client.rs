@@ -684,10 +684,9 @@ impl FabricCAClient {
         &self,
         resp: reqwest::Response,
     ) -> Result<FabricCAResponse, FabricCAError> {
-        let bytes = resp
-            .bytes()
+        let bytes = crate::implement::http_body::read_body(resp)
             .await
-            .map_err(|e| FabricCAError::HttpError(full_error_chain(&e)))?;
+            .map_err(FabricCAError::HttpError)?;
         serde_json::from_slice(&bytes).map_err(|e| {
             FabricCAError::ParseError(format!(
                 "{}: body={}",
