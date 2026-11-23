@@ -33,13 +33,7 @@ impl SignedProposal {
             return Err(SubmitError::NotConnected);
         }
         let mut gateway_client = client.create_gateway();
-        let header = self
-            .get_proposal()
-            .expect("Invalid proposal bytes")
-            .get_header()
-            .unwrap()
-            .get_channel_header()
-            .unwrap();
+        let header = self.channel_header()?;
 
         let endorse_request = EndorseRequest {
             transaction_id: header.tx_id,
@@ -58,5 +52,64 @@ impl SignedProposal {
                 crate::implement::grpc_error::format_grpc_error(&err),
             )),
         }
+    }
+
+    /// The channel header of the proposal. A `SignedProposal` can be built
+    /// from any bytes, so a malformed one is an error, not a panic.
+    fn channel_header(&self) -> Result<crate::fabric::common::ChannelHeader, SubmitError> {
+        self.get_proposal()
+            .map_err(|_| SubmitError::DecodeError("Invalid proposal bytes"))?
+            .get_header()
+            .map_err(|_| SubmitError::DecodeError("Invalid proposal header"))?
+            .get_channel_header()
+            .map_err(|_| SubmitError::DecodeError("Invalid channel header in proposal header"))
+    }
+}
+
+#[cfg(all(test, any(feature = "client", feature = "client-wasm")))]
+mod tests {
+    use super::*;
+    use crate::fabric::common::{ChannelHeader, Header};
+
+    #[test]
+    fn channel_header_errors_instead_of_panicking() {
+        let garbage = SignedProposal {
+            proposal_bytes: vec![0xff, 0xff],
+            signature: vec![],
+        };
+        assert!(matches!(
+            garbage.channel_header(),
+            Err(SubmitError::DecodeError("Invalid proposal bytes"))
+        ));
+        let bad_header = SignedProposal {
+            proposal_bytes: Proposal {
+                header: vec![0xff, 0xff],
+                ..Default::default()
+            }
+            .encode_to_vec(),
+            signature: vec![],
+        };
+        assert!(matches!(
+            bad_header.channel_header(),
+            Err(SubmitError::DecodeError("Invalid proposal header"))
+        ));
+
+        let valid = SignedProposal {
+            proposal_bytes: Proposal {
+                header: Header {
+                    channel_header: ChannelHeader {
+                        channel_id: "mychannel".into(),
+                        ..Default::default()
+                    }
+                    .encode_to_vec(),
+                    signature_header: vec![],
+                }
+                .encode_to_vec(),
+                ..Default::default()
+            }
+            .encode_to_vec(),
+            signature: vec![],
+        };
+        assert_eq!(valid.channel_header().unwrap().channel_id, "mychannel");
     }
 }

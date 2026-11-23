@@ -55,6 +55,9 @@
   0.14.0 releases instead of their release candidates. `reqwest` 0.13 for
   the REST clients (Fabric CA, osnadmin, operations); its TLS feature is now
   `rustls` with the platform verifier.
+- **Fixed: endorsing a malformed `SignedProposal` no longer panics.**
+  `endorse` and `endorse_with_organizations` decoded the proposal with
+  `expect`/`unwrap`; they now return `SubmitError::DecodeError`.
 - **Fixed: a gateway reply without header no longer panics.**
   `Envelope::submit` and `wait_for_commit` decoded the prepared transaction
   the gateway returned from endorsement with `expect`, so a reply without a
