@@ -507,27 +507,35 @@ pub fn add_application_org(
         )));
     }
 
-    let mut values = BTreeMap::new();
-    values.insert(
-        MSP_KEY.to_string(),
-        ConfigValue {
-            version: 0,
-            value: msp_config.encode_to_vec(),
-            mod_policy: ADMINS_POLICY.into(),
-        },
-    );
-
-    application.groups.insert(
-        msp_id.to_string(),
-        ConfigGroup {
-            version: 0,
-            groups: BTreeMap::new(),
-            values,
-            policies,
-            mod_policy: ADMINS_POLICY.into(),
-        },
-    );
+    application
+        .groups
+        .insert(msp_id.to_string(), org_group(msp_config, policies));
     Ok(())
+}
+
+/// A config value at version 0 with mod policy `Admins`, as `configtxgen`
+/// writes every value of a new group.
+fn admins_value(value: Vec<u8>) -> ConfigValue {
+    ConfigValue {
+        version: 0,
+        value,
+        mod_policy: ADMINS_POLICY.into(),
+    }
+}
+
+/// An organization group at version 0 with mod policy `Admins`, holding the
+/// `MSP` value and the given policies (`configtxgen`'s org group layout).
+fn org_group(msp_config: &MspConfig, policies: BTreeMap<String, ConfigPolicy>) -> ConfigGroup {
+    ConfigGroup {
+        version: 0,
+        groups: BTreeMap::new(),
+        values: BTreeMap::from([(
+            MSP_KEY.to_string(),
+            admins_value(msp_config.encode_to_vec()),
+        )]),
+        policies,
+        mod_policy: ADMINS_POLICY.into(),
+    }
 }
 
 // =====================================================================
@@ -1002,6 +1010,25 @@ pub fn decode_config_update_envelope(
         .map_err(|_| ConfigTxError::DecodeError("Failed to decode ConfigUpdateEnvelope"))
 }
 
+/// The current time as a protobuf timestamp (`web_time` under WASM, where
+/// `std::time::SystemTime::now` panics).
+fn now_timestamp() -> crate::fabric::google_protobuf::Timestamp {
+    #[cfg(feature = "client-wasm")]
+    {
+        crate::fabric::google_protobuf::Timestamp {
+            seconds: web_time::SystemTime::now()
+                .duration_since(web_time::SystemTime::UNIX_EPOCH)
+                .expect("Invalid duration calc")
+                .as_secs() as i64,
+            nanos: 0,
+        }
+    }
+    #[cfg(not(feature = "client-wasm"))]
+    {
+        std::time::SystemTime::now().into()
+    }
+}
+
 /// Assembles the final signed `CONFIG_UPDATE` transaction [`Envelope`] ready
 /// for submission to the orderer.
 ///
@@ -1033,22 +1060,7 @@ pub fn build_config_update_transaction(
     let channel_header = ChannelHeader {
         r#type: HeaderType::ConfigUpdate.into(),
         version: 0,
-        timestamp: Some({
-            #[cfg(feature = "client-wasm")]
-            {
-                crate::fabric::google_protobuf::Timestamp {
-                    seconds: web_time::SystemTime::now()
-                        .duration_since(web_time::SystemTime::UNIX_EPOCH)
-                        .expect("Invalid duration calc")
-                        .as_secs() as i64,
-                    nanos: 0,
-                }
-            }
-            #[cfg(not(feature = "client-wasm"))]
-            {
-                std::time::SystemTime::now().into()
-            }
-        }),
+        timestamp: Some(now_timestamp()),
         channel_id: config_update.channel_id.clone(),
         tx_id: transaction_id,
         epoch: 0,
