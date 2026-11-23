@@ -76,6 +76,12 @@
   `BuilderError::InvalidParameter` for any scheme other than `https` (native
   builds; on wasm the scheme is the gRPC-web proxy's) instead of panicking
   on an unparsable one.
+- **Fabric CA client refuses plaintext http to remote hosts.**
+  `FabricCAClientBuilder::build` returns `BuilderError::InvalidParameter`
+  for an `http://` URL whose host is not loopback: `enroll` sends the
+  enrollment secret as basic auth and the other calls a reusable auth
+  token, both readable on such a connection. `allow_plaintext_http()` opts
+  back in; `http://localhost`, `127.0.0.1` and `[::1]` stay accepted.
 - **Fixed: a full queue to the peer no longer ends the chaincode.** Messages
   to the peer went through `start_send(...).unwrap()` on a queue of 100. If
   the gRPC stream drained slower than the chaincode wrote (flow control, a
