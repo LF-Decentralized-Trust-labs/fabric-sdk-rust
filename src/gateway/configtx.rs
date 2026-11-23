@@ -47,14 +47,15 @@ use crate::{
     fabric::{
         common::{
             ChannelHeader, Config, ConfigGroup, ConfigPolicy, ConfigSignature, ConfigUpdate,
-            ConfigUpdateEnvelope, ConfigValue, Envelope, Header, HeaderType, Payload,
-            SignatureHeader,
+            ConfigUpdateEnvelope, ConfigValue, Envelope, Header, HeaderType, Payload, Policy,
+            SignatureHeader, msp_role::MspRoleType, policy::PolicyType,
         },
         etcdraft,
         msp::MspConfig,
         orderer::ConsensusType,
         protos::{AnchorPeer, AnchorPeers},
     },
+    gateway::collection::role_or_policy,
     identity::Identity,
     implement::crypto::{generate_nonce, generate_transaction_id},
 };
@@ -504,6 +505,93 @@ pub fn add_application_org(
         },
     );
     Ok(())
+}
+
+// =====================================================================
+// Organization building blocks
+// =====================================================================
+
+const READERS_POLICY: &str = "Readers";
+const WRITERS_POLICY: &str = "Writers";
+const ENDORSEMENT_POLICY: &str = "Endorsement";
+
+fn signature_config_policy(principals: &[(&str, MspRoleType)]) -> ConfigPolicy {
+    ConfigPolicy {
+        version: 0,
+        policy: Some(Policy {
+            r#type: PolicyType::Signature.into(),
+            value: role_or_policy(principals).encode_to_vec(),
+        }),
+        mod_policy: ADMINS_POLICY.into(),
+    }
+}
+
+/// The standard policies of an application organization with NodeOUs
+/// enabled, as Fabric's test-network `configtx.yaml` defines them:
+///
+/// | Policy        | Rule                                                  |
+/// |---------------|-------------------------------------------------------|
+/// | `Readers`     | `OR('<msp>.admin', '<msp>.peer', '<msp>.client')`     |
+/// | `Writers`     | `OR('<msp>.admin', '<msp>.client')`                   |
+/// | `Admins`      | `OR('<msp>.admin')`                                   |
+/// | `Endorsement` | `OR('<msp>.peer')`                                    |
+///
+/// Each is a signature policy with mod policy `Admins` at version 0, encoded
+/// exactly as `configtxgen` encodes the rule. Pass the map to
+/// [`add_application_org`].
+pub fn org_policies(msp_id: &str) -> BTreeMap<String, ConfigPolicy> {
+    use MspRoleType::{Admin, Client, Peer};
+    BTreeMap::from([
+        (
+            READERS_POLICY.to_string(),
+            signature_config_policy(&[(msp_id, Admin), (msp_id, Peer), (msp_id, Client)]),
+        ),
+        (
+            WRITERS_POLICY.to_string(),
+            signature_config_policy(&[(msp_id, Admin), (msp_id, Client)]),
+        ),
+        (
+            ADMINS_POLICY.to_string(),
+            signature_config_policy(&[(msp_id, Admin)]),
+        ),
+        (
+            ENDORSEMENT_POLICY.to_string(),
+            signature_config_policy(&[(msp_id, Peer)]),
+        ),
+    ])
+}
+
+/// The standard policies of an orderer organization, as Fabric's
+/// test-network `configtx.yaml` defines them:
+///
+/// | Policy    | Rule                   |
+/// |-----------|------------------------|
+/// | `Readers` | `OR('<msp>.member')`   |
+/// | `Writers` | `OR('<msp>.member')`   |
+/// | `Admins`  | `OR('<msp>.admin')`    |
+///
+/// There is no `Endorsement` policy. `Readers` and `Writers` use the
+/// `member` role, not the application org's admin/peer/client roles: the
+/// orderer nodes carry the `orderer` NodeOU, and the blocks they sign must
+/// satisfy `/Channel/Orderer/BlockValidation` (`ANY Writers` over the
+/// orderer orgs). With `OR(admin, client)` no orderer could sign a valid
+/// block.
+pub fn orderer_org_policies(msp_id: &str) -> BTreeMap<String, ConfigPolicy> {
+    use MspRoleType::{Admin, Member};
+    BTreeMap::from([
+        (
+            READERS_POLICY.to_string(),
+            signature_config_policy(&[(msp_id, Member)]),
+        ),
+        (
+            WRITERS_POLICY.to_string(),
+            signature_config_policy(&[(msp_id, Member)]),
+        ),
+        (
+            ADMINS_POLICY.to_string(),
+            signature_config_policy(&[(msp_id, Admin)]),
+        ),
+    ])
 }
 
 fn consensus_metadata_mut(

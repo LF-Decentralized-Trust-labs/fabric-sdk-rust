@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **`configtx::org_policies` and `configtx::orderer_org_policies`**: the
+  standard `Readers`/`Writers`/`Admins`(/`Endorsement`) signature policies of
+  an application or orderer organization with NodeOUs, ready for
+  `add_application_org`. Byte-identical to `configtxgen -printOrg` for the
+  test-network's `Org1MSP` and `OrdererOrg` (`tests/configtx_fixtures.rs`).
+- **`collection::role_or_policy`**: `OR('<msp>.<role>', ...)` signature
+  policy over any MSP roles; `member_or_policy` now delegates to it.
+
 - **Fixed: a peer ERROR reply no longer hangs the chaincode.** The peer
   answers a failed ledger call (a rejected rich query or bookmark, a denied
   private-data read, an invalid key) with `ERROR` instead of `RESPONSE`. The
