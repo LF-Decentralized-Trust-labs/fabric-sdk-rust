@@ -518,6 +518,135 @@ fn full_loop_create_channel_and_update_anchor_peers() {
     });
 }
 
+// ===== channel creation with the SDK's own genesis block =====
+
+/// The org's verifying MSP, read from its `msp/` directory the way
+/// configtxgen reads it (`cacerts/`, `tlscacerts/`, NodeOUs bound to the CA).
+fn msp_from_dir(msp_id: &str, msp_dir: &Path) -> fabric_sdk::fabric::msp::MspConfig {
+    let ca = std::fs::read(only_file(&msp_dir.join("cacerts"))).unwrap();
+    let tlsca = std::fs::read(only_file(&msp_dir.join("tlscacerts"))).unwrap();
+    configtx::MspConfigBuilder::new(msp_id)
+        .with_root_cert(ca.clone())
+        .with_tls_root_cert(tlsca)
+        .with_node_ous(ca)
+        .build()
+        .unwrap()
+}
+
+/// The test-network's `ChannelUsingRaft` profile, built with
+/// [`configtx::GenesisBuilder`] instead of configtxgen.
+fn sdk_genesis_builder(channel: &str) -> configtx::GenesisBuilder {
+    let orgs = base().join("organizations");
+    let tls_cert = std::fs::read(
+        orgs.join("ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt"),
+    )
+    .unwrap();
+    configtx::GenesisBuilder::new(channel)
+        .with_application_org(
+            configtx::ApplicationOrg::new(
+                "Org1MSP",
+                msp_from_dir(
+                    "Org1MSP",
+                    &orgs.join("peerOrganizations/org1.example.com/msp"),
+                ),
+            )
+            .with_anchor_peer("peer0.org1.example.com", 7051),
+        )
+        .with_application_org(configtx::ApplicationOrg::new(
+            "Org2MSP",
+            msp_from_dir(
+                "Org2MSP",
+                &orgs.join("peerOrganizations/org2.example.com/msp"),
+            ),
+        ))
+        .with_orderer_org(
+            configtx::OrdererOrg::new(
+                "OrdererMSP",
+                msp_from_dir(
+                    "OrdererMSP",
+                    &orgs.join("ordererOrganizations/example.com/msp"),
+                ),
+            )
+            .with_name("OrdererOrg")
+            .with_endpoint("orderer.example.com:7050"),
+        )
+        .with_consenter("orderer.example.com", 7050, tls_cert.clone(), tls_cert)
+        .with_batch_size(10, 99 * 1024 * 1024, 512 * 1024)
+        .with_batch_timeout("2s")
+}
+
+#[test]
+#[ignore = "requires a running Fabric test network (set FABRIC_IT_BASE); creates a throwaway channel"]
+fn create_channel_with_sdk_genesis_block() {
+    runtime().block_on(async {
+        let channel = unique_channel();
+        println!("=== SDK genesis block on channel {channel} ===");
+
+        let builder = sdk_genesis_builder(&channel);
+        let genesis = builder.build().unwrap().encode_to_vec();
+        println!("genesis block: {} bytes", genesis.len());
+
+        // 1. The orderer accepts the block and becomes a raft consenter.
+        let osnadmin = osnadmin_client();
+        let info = osnadmin.join_channel(genesis.clone()).await.unwrap();
+        println!(
+            "osnadmin join: name={} status={} relation={}",
+            info.name, info.status, info.consensus_relation
+        );
+        assert_eq!(info.name, channel);
+        assert_eq!(info.consensus_relation, "consenter");
+        let mut status = info.status;
+        for _ in 0..30 {
+            if status == "active" {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            status = osnadmin.get_channel(&channel).await.unwrap().status;
+        }
+        assert_eq!(status, "active", "orderer never activated {channel}");
+
+        // 2. The peer joins with the same block.
+        let client = peer_client().await;
+        let cscc = client.get_cscc_client();
+        cscc.join_chain(genesis.clone()).await.unwrap();
+        let channels = cscc.get_channels().await.unwrap();
+        assert!(
+            channels.channels.iter().any(|c| c.channel_id == channel),
+            "peer does not list {channel}: {:?}",
+            channels.channels
+        );
+
+        // 3. The peer's channel config is exactly the config we built.
+        let config = cscc.get_channel_config(&channel).await.unwrap();
+        assert_eq!(config, builder.build_config().unwrap());
+
+        // 4. The orderer serves the same config in its genesis block. Deliver
+        //    answers 503 until the new raft channel has elected a leader.
+        let orderer = orderer_client().await;
+        let mut oldest = None;
+        for attempt in 0..30 {
+            match orderer.fetch_block(&channel, BlockPosition::Oldest).await {
+                Ok(block) => {
+                    oldest = Some(block);
+                    break;
+                }
+                Err(err) if err.to_string().contains("503") => {
+                    println!("attempt {attempt}: orderer not ready yet ({err}), retrying");
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                }
+                Err(err) => panic!("deliver failed: {err}"),
+            }
+        }
+        let oldest = oldest.expect("orderer never served the genesis block");
+        assert_eq!(
+            config_from_config_block(&oldest),
+            builder.build_config().unwrap()
+        );
+
+        println!("=== SDK genesis block OK on {channel} ===");
+    });
+}
+
 /// Experiment: does the Gateway `Submit` RPC accept a CONFIG_UPDATE envelope?
 ///
 /// This is an open architecture question: if it does, WASM clients could
