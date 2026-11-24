@@ -50,6 +50,71 @@
 - **`collection::role_or_policy`**: `OR('<msp>.<role>', ...)` signature
   policy over any MSP roles; `member_or_policy` now delegates to it.
 
+- **Dependencies:** `sha2` 0.11 (the version `ecdsa` 0.17 already uses, so
+  SHA-2 is compiled once), `base64` 0.23, and the `ecdsa` 0.17.0 / `p256`
+  0.14.0 releases instead of their release candidates. `reqwest` 0.13 for
+  the REST clients (Fabric CA, osnadmin, operations); its TLS feature is now
+  `rustls` with the platform verifier. Without `with_tls`, these clients now
+  trust the operating system's certificate store instead of reqwest's
+  bundled Mozilla roots, so a container image needs its CA certificates
+  (e.g. the `ca-certificates` package) for publicly signed endpoints.
+- **Fixed: endorsing a malformed `SignedProposal` no longer panics.**
+  `endorse` and `endorse_with_organizations` decoded the proposal with
+  `expect`/`unwrap`; they now return `SubmitError::DecodeError`.
+- **Fixed: a gateway reply without header no longer panics.**
+  `Envelope::submit` and `wait_for_commit` decoded the prepared transaction
+  the gateway returned from endorsement with `expect`, so a reply without a
+  payload header (from a faulty or malicious peer) crashed the application.
+  They now return `SubmitError::DecodeError`.
+- **Fixed: osnadmin channel names can no longer change the request path.**
+  `OsnadminClient::get_channel` and `remove_channel` put the name into the
+  URL as is, and the HTTP client resolves `..` and cuts at `?`/`#`, so
+  `remove_channel("tenant-a/../victim")` removed channel `victim`. Names
+  that are not valid Fabric channel IDs are now rejected with the new
+  `OsnadminError::InvalidChannelName` before anything is sent (the enum is
+  not `#[non_exhaustive]`, so an exhaustive `match` on it needs the new
+  arm).
+- **Fixed: a TLS client no longer connects in plaintext with a non-https
+  scheme.** `ClientBuilder` and `OrdererClientBuilder` require a TLS CA, but
+  tonic only uses TLS for `https`: `with_scheme("http")` connected without
+  TLS and without an error, so proposals, transient data and results went
+  unencrypted and unauthenticated. `build` now returns
+  `BuilderError::InvalidParameter` for any scheme other than `https` (native
+  builds; on wasm the scheme is the gRPC-web proxy's) instead of panicking
+  on an unparsable one.
+- **Responses are size-bounded.** The gateway (endorser) and orderer
+  gRPC clients decoded messages of any size, and the Fabric CA, osnadmin
+  and operations clients read bodies without limit, so a faulty or
+  malicious node could make the application allocate any amount. Both now
+  stop at Fabric's default message limit, 100 MiB.
+- **REST clients trust only the configured TLS CA.** `with_tls` on the
+  Fabric CA, osnadmin and operations clients added the CA to the built-in
+  public roots, so any public CA's certificate for the host name was
+  accepted as well. With `with_tls`, only the given certificates are
+  trusted now, and the PEM may be a bundle. A PEM without any certificate
+  is rejected by `build` instead of failing every request later.
+- **Fixed: `IdentityBuilder::build` returns an error for an invalid key.**
+  It panicked instead, and a SEC1 `EC PRIVATE KEY` PEM always failed
+  because the label was rewritten to PKCS#8. SEC1 keys are now accepted
+  alongside PKCS#8; anything else is `BuilderError::InvalidParameter`.
+- **Fabric CA client refuses plaintext http to remote hosts.**
+  `FabricCAClientBuilder::build` returns `BuilderError::InvalidParameter`
+  for an `http://` URL whose host is not loopback: `enroll` sends the
+  enrollment secret as basic auth and the other calls a reusable auth
+  token, both readable on such a connection. `allow_plaintext_http()` opts
+  back in; `http://localhost`, `127.0.0.1` and `[::1]` stay accepted.
+- **Fixed: a full queue to the peer no longer ends the chaincode.** Messages
+  to the peer went through `start_send(...).unwrap()` on a queue of 100. If
+  the gRPC stream drained slower than the chaincode wrote (flow control, a
+  slow peer), the unwrap panicked and ended the process. Sending now waits
+  for space.
+- **Fixed: the chaincode no longer drops transactions under load.**
+  Transactions run one at a time from a queue of 100. When the peer sent
+  more at once, the router could not queue them and dropped them with a log
+  line; nothing answered them, so each of those clients waited for the
+  peer's execute timeout (30 s by default). Anyone allowed to invoke the
+  chaincode could cause it by sending many requests at once. The queue is
+  now unbounded; the peer bounds how many transactions it has in flight.
 - **Fixed: a peer ERROR reply no longer hangs the chaincode.** The peer
   answers a failed ledger call (a rejected rich query or bookmark, a denied
   private-data read, an invalid key) with `ERROR` instead of `RESPONSE`. The

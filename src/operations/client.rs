@@ -117,8 +117,9 @@ impl OperationsClientBuilder {
         Ok(self)
     }
 
-    /// Sets the PEM-encoded TLS CA certificate used to verify the server's
-    /// TLS certificate (for HTTPS operations endpoints).
+    /// Sets the PEM-encoded TLS CA certificate (or bundle) used to verify the
+    /// server's TLS certificate (for HTTPS operations endpoints). Only these
+    /// certificates are trusted, not the built-in public roots.
     pub fn with_tls(mut self, tls: impl Into<Vec<u8>>) -> Self {
         self.tls = Some(tls.into());
         self
@@ -148,9 +149,10 @@ impl OperationsClientBuilder {
         }
 
         if let Some(tls) = self.tls {
-            let cert = reqwest::Certificate::from_pem(&tls)
-                .map_err(|e| BuilderError::InvalidParameter(e.to_string()))?;
-            builder = builder.add_root_certificate(cert);
+            // Only the configured CA: a certificate from any public CA for
+            // this host name would be accepted too if the built-in roots stayed.
+            let certs = crate::implement::rest_tls::tls_roots(&tls)?;
+            builder = builder.tls_certs_only(certs);
         }
 
         let http_client = builder
@@ -188,10 +190,9 @@ impl OperationsClient {
             .send()
             .await
             .map_err(|e| OperationsError::HttpError(full_error_chain(&e)))?;
-        let bytes = response
-            .bytes()
+        let bytes = crate::implement::http_body::read_body(response)
             .await
-            .map_err(|e| OperationsError::HttpError(full_error_chain(&e)))?;
+            .map_err(OperationsError::HttpError)?;
         serde_json::from_slice(&bytes).map_err(|e| {
             OperationsError::ParseError(format!(
                 "{}: body={}",
@@ -232,7 +233,9 @@ impl OperationsClient {
         if status.is_success() {
             Ok(())
         } else {
-            let body = response.bytes().await.unwrap_or_default();
+            let body = crate::implement::http_body::read_body(response)
+                .await
+                .unwrap_or_default();
             Err(OperationsError::ServerError {
                 status: status.as_u16(),
                 message: String::from_utf8_lossy(&body).into_owned(),
@@ -259,10 +262,9 @@ impl OperationsClient {
             .map_err(|e| OperationsError::HttpError(full_error_chain(&e)))?;
 
         let status = response.status();
-        let bytes = response
-            .bytes()
+        let bytes = crate::implement::http_body::read_body(response)
             .await
-            .map_err(|e| OperationsError::HttpError(full_error_chain(&e)))?;
+            .map_err(OperationsError::HttpError)?;
 
         if !status.is_success() {
             return Err(OperationsError::ServerError {

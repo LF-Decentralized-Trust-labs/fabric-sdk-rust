@@ -141,8 +141,9 @@ impl OsnadminClientBuilder {
         Ok(self)
     }
 
-    /// Sets the PEM-encoded TLS CA certificate used to verify the orderer's
-    /// TLS server certificate.
+    /// Sets the PEM-encoded TLS CA certificate (or bundle) used to verify the
+    /// orderer's TLS server certificate. Only these certificates are trusted,
+    /// not the built-in public roots.
     pub fn with_tls(mut self, tls: impl Into<Vec<u8>>) -> Self {
         self.tls = Some(tls.into());
         self
@@ -173,9 +174,10 @@ impl OsnadminClientBuilder {
         }
 
         if let Some(tls) = self.tls {
-            let cert = reqwest::Certificate::from_pem(&tls)
-                .map_err(|e| BuilderError::InvalidParameter(e.to_string()))?;
-            builder = builder.add_root_certificate(cert);
+            // Only the configured CA: a certificate from any public CA for
+            // this host name would be accepted too if the built-in roots stayed.
+            let certs = crate::implement::rest_tls::tls_roots(&tls)?;
+            builder = builder.tls_certs_only(certs);
         }
 
         let http_client = builder
@@ -225,7 +227,7 @@ impl OsnadminClient {
             .get(format!(
                 "{}/participation/v1/channels/{}",
                 self.base_url,
-                channel_name.as_ref()
+                checked_channel_name(channel_name.as_ref())?
             ))
             .send()
             .await
@@ -266,7 +268,7 @@ impl OsnadminClient {
             .delete(format!(
                 "{}/participation/v1/channels/{}",
                 self.base_url,
-                channel_name.as_ref()
+                checked_channel_name(channel_name.as_ref())?
             ))
             .send()
             .await
@@ -289,10 +291,9 @@ impl OsnadminClient {
         if !status.is_success() {
             return Err(Self::error_from_response(status, response).await);
         }
-        let bytes = response
-            .bytes()
+        let bytes = crate::implement::http_body::read_body(response)
             .await
-            .map_err(|e| OsnadminError::HttpError(full_error_chain(&e)))?;
+            .map_err(OsnadminError::HttpError)?;
         serde_json::from_slice(&bytes).map_err(|e| {
             OsnadminError::ParseError(format!("{}: body={}", e, String::from_utf8_lossy(&bytes)))
         })
@@ -302,13 +303,43 @@ impl OsnadminClient {
         status: reqwest::StatusCode,
         response: reqwest::Response,
     ) -> OsnadminError {
-        let body = response.bytes().await.unwrap_or_default();
+        let body = crate::implement::http_body::read_body(response)
+            .await
+            .unwrap_or_default();
         let message = serde_json::from_slice::<ErrorResponse>(&body)
             .map(|e| e.error)
             .unwrap_or_else(|_| String::from_utf8_lossy(&body).into_owned());
         OsnadminError::ServerError {
             status: status.as_u16(),
             message,
+        }
+    }
+}
+
+/// Returns `name` if it is a valid channel ID. The name becomes a path
+/// segment, and the HTTP client resolves `..` and cuts at `?` and `#`, so a
+/// name such as `a/../b` would otherwise address channel `b`.
+fn checked_channel_name(name: &str) -> Result<&str, OsnadminError> {
+    if crate::gateway::configtx::is_valid_channel_id(name) {
+        Ok(name)
+    } else {
+        Err(OsnadminError::InvalidChannelName(name.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn channel_names_that_change_the_path_are_rejected() {
+        assert_eq!(checked_channel_name("mychannel").unwrap(), "mychannel");
+        assert_eq!(checked_channel_name("a.b-1").unwrap(), "a.b-1");
+        for name in ["", "a/../b", "..", "b?x", "b#x", "b%2F", "B", "1a", "a b"] {
+            match checked_channel_name(name) {
+                Err(OsnadminError::InvalidChannelName(n)) => assert_eq!(n, name),
+                other => panic!("expected InvalidChannelName for {name:?}, got {other:?}"),
+            }
         }
     }
 }

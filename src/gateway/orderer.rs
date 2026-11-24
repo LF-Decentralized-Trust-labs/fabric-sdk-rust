@@ -97,7 +97,7 @@ impl OrdererClient {
         match &self.channel {
             Some(channel) => Ok(AtomicBroadcastClient::new(channel.clone())
                 .max_encoding_message_size(usize::MAX)
-                .max_decoding_message_size(usize::MAX)),
+                .max_decoding_message_size(crate::gateway::client::MAX_GRPC_MESSAGE_SIZE)),
             None => Err(SubmitError::NotConnected),
         }
     }
@@ -293,7 +293,8 @@ impl OrdererClientBuilder {
         Ok(self)
     }
 
-    /// URI scheme for the gRPC connection. Default is `https`.
+    /// URI scheme for the gRPC connection. Default is `https`, the only one
+    /// [`build`](Self::build) accepts: the connection always uses TLS.
     pub fn with_scheme(mut self, scheme: impl Into<String>) -> Result<OrdererClientBuilder, BuilderError> {
         let scheme = scheme.into().trim().to_string();
         if scheme.is_empty() {
@@ -324,8 +325,6 @@ impl OrdererClientBuilder {
     /// Collects and validates the builder values. Building does not open the
     /// connection; call [`OrdererClient::connect`] afterwards.
     pub fn build(self) -> Result<OrdererClient, BuilderError> {
-        use std::str::FromStr;
-
         let identity = match self.identity {
             Some(identity) => identity,
             None => return Err(BuilderError::MissingParameter("identity".into())),
@@ -337,10 +336,8 @@ impl OrdererClientBuilder {
 
         let tls_config = tonic::transport::ClientTlsConfig::new()
             .ca_certificate(tonic::transport::Certificate::from_pem(tls.as_slice()));
-        let scheme = self.scheme.unwrap_or_else(|| "https".to_string());
+        let scheme = crate::gateway::client::tls_scheme(self.scheme)?;
         let authority = self.authority.unwrap_or_else(|| "localhost:7050".to_string());
-        let scheme =
-            tonic::codegen::http::uri::Scheme::from_str(scheme.as_str()).expect("Invalid scheme");
         let uri = tonic::transport::Uri::builder()
             .scheme(scheme)
             .authority(authority)

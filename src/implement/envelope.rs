@@ -36,15 +36,7 @@ impl Envelope {
 
         let submit_request = SubmitRequest {
             transaction_id: transaction_id.clone(),
-            channel_id: self
-                .get_payload()
-                .map_err(|_| SubmitError::DecodeError("Invalid payload"))?
-                .get_header()
-                .expect("Expected header in payload")
-                .get_channel_header()
-                .map_err(|_| SubmitError::DecodeError("Invalid header"))?
-                .channel_id
-                .to_string(),
+            channel_id: self.channel_header()?.channel_id,
             prepared_transaction: Some(self.clone()),
         };
 
@@ -65,14 +57,20 @@ impl Envelope {
         &self,
         client: &crate::gateway::client::Client,
     ) -> Result<CommitStatusResponse, SubmitError> {
-        let header = self
-            .get_payload()
+        let header = self.channel_header()?;
+        client.commit_status(header.tx_id, header.channel_id).await
+    }
+
+    /// The channel header of the payload. The envelope comes back from the
+    /// gateway's endorse call, so a missing or malformed header is an error,
+    /// not a panic.
+    fn channel_header(&self) -> Result<crate::fabric::common::ChannelHeader, SubmitError> {
+        self.get_payload()
             .map_err(|_| SubmitError::DecodeError("Invalid payload"))?
             .get_header()
-            .expect("No header in payload")
+            .ok_or(SubmitError::DecodeError("No header in payload"))?
             .get_channel_header()
-            .map_err(|_| SubmitError::DecodeError("Invalid Channel header in payload header"))?;
-        client.commit_status(header.tx_id, header.channel_id).await
+            .map_err(|_| SubmitError::DecodeError("Invalid channel header in payload header"))
     }
 }
 
@@ -80,5 +78,48 @@ impl Envelope {
     /// Decodes the payload from the envelope
     pub fn get_payload(&self) -> Result<Payload, DecodeError> {
         Payload::decode(self.payload.as_slice())
+    }
+}
+
+#[cfg(all(test, any(feature = "client", feature = "client-wasm")))]
+mod tests {
+    use super::*;
+    use crate::fabric::common::{ChannelHeader, Header};
+
+    #[test]
+    fn channel_header_errors_instead_of_panicking() {
+        // An empty payload decodes to a Payload without header.
+        let empty = Envelope::default();
+        match empty.channel_header() {
+            Err(SubmitError::DecodeError(reason)) => assert_eq!(reason, "No header in payload"),
+            other => panic!("expected DecodeError, got {other:?}"),
+        }
+        let garbage = Envelope {
+            payload: vec![0xff, 0xff],
+            signature: vec![],
+        };
+        assert!(matches!(
+            garbage.channel_header(),
+            Err(SubmitError::DecodeError("Invalid payload"))
+        ));
+
+        let payload = Payload {
+            header: Some(Header {
+                channel_header: ChannelHeader {
+                    channel_id: "mychannel".into(),
+                    tx_id: "abc".into(),
+                    ..Default::default()
+                }
+                .encode_to_vec(),
+                signature_header: vec![],
+            }),
+            data: vec![],
+        };
+        let envelope = Envelope {
+            payload: payload.encode_to_vec(),
+            signature: vec![],
+        };
+        let header = envelope.channel_header().unwrap();
+        assert_eq!((header.channel_id.as_str(), header.tx_id.as_str()), ("mychannel", "abc"));
     }
 }

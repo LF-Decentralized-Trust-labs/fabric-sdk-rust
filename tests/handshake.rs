@@ -58,7 +58,7 @@ mod tests {
 
     #[test]
     fn test_handshake_orderer() {
-        dotenv::dotenv().unwrap();
+        dotenvy::dotenv().unwrap();
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -71,7 +71,7 @@ mod tests {
 
     #[test]
     fn test_handshake_peer0() {
-        dotenv::dotenv().unwrap();
+        dotenvy::dotenv().unwrap();
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -84,7 +84,7 @@ mod tests {
 
     #[test]
     fn test_handshake_peer1() {
-        dotenv::dotenv().unwrap();
+        dotenvy::dotenv().unwrap();
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()

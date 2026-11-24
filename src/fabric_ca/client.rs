@@ -283,6 +283,7 @@ pub struct FabricCAClientBuilder {
     tls: Option<Vec<u8>>,
     #[cfg(not(target_arch = "wasm32"))]
     danger_accept_invalid_certs: bool,
+    allow_plaintext_http: bool,
 }
 
 impl Default for FabricCAClientBuilder {
@@ -300,6 +301,7 @@ impl FabricCAClientBuilder {
             tls: None,
             #[cfg(not(target_arch = "wasm32"))]
             danger_accept_invalid_certs: false,
+            allow_plaintext_http: false,
         }
     }
 
@@ -320,7 +322,9 @@ impl FabricCAClientBuilder {
         self
     }
 
-    /// Sets the PEM-encoded TLS CA certificate used to verify the server's TLS certificate.
+    /// Sets the PEM-encoded TLS CA certificate (or bundle) used to verify the
+    /// server's TLS certificate. Only these certificates are trusted, not the
+    /// built-in public roots.
     ///
     /// Not available in WASM builds: TLS is handled by the browser and root certificates
     /// cannot be configured per-request.
@@ -343,8 +347,30 @@ impl FabricCAClientBuilder {
         self
     }
 
+    /// Allows an `http://` URL to a host other than loopback. Without it,
+    /// [`build`](Self::build) rejects one: `enroll` sends the enrollment
+    /// secret as basic auth and every other call a reusable auth token, both
+    /// readable on a plaintext connection. `http://localhost`, `127.0.0.1`
+    /// and `[::1]` are always accepted.
+    pub fn allow_plaintext_http(mut self) -> Self {
+        self.allow_plaintext_http = true;
+        self
+    }
+
+    /// Builds the client.
+    ///
+    /// Returns [`BuilderError::MissingParameter`] without URL and
+    /// [`BuilderError::InvalidParameter`] for an `http://` URL to a
+    /// non-loopback host unless
+    /// [`allow_plaintext_http`](Self::allow_plaintext_http) was called.
     pub fn build(self) -> Result<FabricCAClient, BuilderError> {
         let url = self.url.ok_or(BuilderError::MissingParameter("url".into()))?;
+        if is_plaintext_http(&url) && !self.allow_plaintext_http {
+            return Err(BuilderError::InvalidParameter(format!(
+                "{url} is plaintext http: credentials would be sent unencrypted \
+                 (call allow_plaintext_http to allow it)"
+            )));
+        }
         // The identity is optional: `enroll` authenticates with basic auth
         // (enrollment ID + secret) and therefore works without one. All
         // token-authenticated operations return `FabricCAError::NotConfigured`
@@ -359,9 +385,10 @@ impl FabricCAClientBuilder {
             let mut builder =
                 reqwest::ClientBuilder::new().danger_accept_invalid_certs(self.danger_accept_invalid_certs);
             if let Some(tls) = self.tls {
-                let cert = reqwest::Certificate::from_pem(&tls)
-                    .map_err(|e| BuilderError::InvalidParameter(e.to_string()))?;
-                builder = builder.add_root_certificate(cert);
+                // Only the configured CA: a certificate from any public CA for
+                // this host name would be accepted too if the built-in roots stayed.
+                let certs = crate::implement::rest_tls::tls_roots(&tls)?;
+                builder = builder.tls_certs_only(certs);
             }
             builder
                 .build()
@@ -374,6 +401,31 @@ impl FabricCAClientBuilder {
             http_client,
         })
     }
+}
+
+/// Whether `url` is `http://` to a host other than loopback. Loopback
+/// traffic does not leave the machine, e.g. a local CA or the dev server
+/// of a WASM app proxying to it.
+fn is_plaintext_http(url: &str) -> bool {
+    let Some(rest) = url
+        .get(..7)
+        .filter(|scheme| scheme.eq_ignore_ascii_case("http://"))
+        .map(|_| &url[7..])
+    else {
+        return false;
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let authority = authority.rsplit_once('@').map_or(authority, |(_, host)| host);
+    let host = if let Some(v6) = authority.strip_prefix('[') {
+        v6.split(']').next().unwrap_or_default()
+    } else {
+        authority.split(':').next().unwrap_or_default()
+    };
+    let loopback = host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback());
+    !loopback
 }
 
 fn full_error_chain(e: &dyn std::error::Error) -> String {
@@ -631,10 +683,9 @@ impl FabricCAClient {
         &self,
         resp: reqwest::Response,
     ) -> Result<FabricCAResponse, FabricCAError> {
-        let bytes = resp
-            .bytes()
+        let bytes = crate::implement::http_body::read_body(resp)
             .await
-            .map_err(|e| FabricCAError::HttpError(full_error_chain(&e)))?;
+            .map_err(FabricCAError::HttpError)?;
         serde_json::from_slice(&bytes).map_err(|e| {
             FabricCAError::ParseError(format!(
                 "{}: body={}",
@@ -764,6 +815,42 @@ fn generate_csr(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plaintext_http_needs_an_explicit_opt_in() {
+        for url in [
+            "http://ca.org1.example.com:7054",
+            "HTTP://10.0.0.5:7054",
+            "http://localhost.evil.com:7054",
+            "http://user@ca:7054/",
+        ] {
+            match FabricCAClientBuilder::new().with_url(url).unwrap().build() {
+                Err(BuilderError::InvalidParameter(reason)) => assert!(reason.contains("plaintext")),
+                Err(other) => panic!("expected InvalidParameter for {url}, got {other:?}"),
+                Ok(_) => panic!("{url} must be rejected"),
+            }
+            assert!(
+                FabricCAClientBuilder::new()
+                    .with_url(url)
+                    .unwrap()
+                    .allow_plaintext_http()
+                    .build()
+                    .is_ok()
+            );
+        }
+        for url in [
+            "https://ca.org1.example.com:7054",
+            "http://localhost:7054",
+            "http://LOCALHOST",
+            "http://127.0.0.1:8080/ca",
+            "http://[::1]:7054",
+        ] {
+            assert!(
+                FabricCAClientBuilder::new().with_url(url).unwrap().build().is_ok(),
+                "{url} must be accepted"
+            );
+        }
+    }
 
     #[test]
     fn revoke_body_uses_fabric_ca_json_tags() {

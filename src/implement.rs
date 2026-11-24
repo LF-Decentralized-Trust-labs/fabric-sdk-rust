@@ -2,6 +2,10 @@
 pub mod crypto;
 #[cfg(any(feature = "client", feature = "client-wasm"))]
 pub(crate) mod grpc_error;
+#[cfg(any(feature = "client", feature = "client-wasm"))]
+pub(crate) mod http_body;
+#[cfg(all(any(feature = "client", feature = "client-wasm"), not(target_arch = "wasm32")))]
+pub(crate) mod rest_tls;
 /// Implementation for the Envelope proto struct
 pub mod envelope;
 /// Implementation for the Header proto struct

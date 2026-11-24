@@ -69,7 +69,7 @@ working directory.
 
 ## Environment configuration
 
-Tests load environment variables via `dotenv` from a `.env` file at the
+Tests load environment variables via `dotenvy` from a `.env` file at the
 repository root. Copy `env_default` to `.env` and edit the paths to match
 your local checkout of `fabric-samples`.
 
